@@ -1,9 +1,12 @@
 import os
 from datetime import datetime
+from pathlib import Path
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
 import yaml
+
+from core.paths import CONFIG_PATH
 
 Base = declarative_base()
 
@@ -77,8 +80,7 @@ class FundFairValue(Base):
 
 
 def load_config():
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.yaml')
-    with open(config_path, 'r', encoding='utf-8') as f:
+    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 

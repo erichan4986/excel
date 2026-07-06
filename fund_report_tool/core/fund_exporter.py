@@ -1,9 +1,11 @@
 import os
 import pandas as pd
+from pathlib import Path
 from core.database import get_session, FundFairValue
+from core.paths import OUTPUT_DIR
 
 
-def export_fund_report(fund_name: str, period: str, output_dir: str = 'data/outputs') -> str:
+def export_fund_report(fund_name: str, period: str, output_dir = OUTPUT_DIR) -> str:
     """Export fund fair value data to an Excel file."""
     session = get_session()
     try:
@@ -16,9 +18,10 @@ def export_fund_report(fund_name: str, period: str, output_dir: str = 'data/outp
     if not items:
         raise ValueError(f'No data found for {fund_name} {period}')
 
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     safe_fund = fund_name.replace('/', '_').replace('\\', '_')
-    output_path = os.path.join(output_dir, f'{safe_fund}_{period}_基金公允价值.xlsx')
+    output_path = output_dir / f'{safe_fund}_{period}_基金公允价值.xlsx'
 
     data = []
     for i in items:
@@ -34,7 +37,7 @@ def export_fund_report(fund_name: str, period: str, output_dir: str = 'data/outp
 
     df = pd.DataFrame(data)
 
-    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+    with pd.ExcelWriter(str(output_path), engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name='基金公允价值', index=False)
         worksheet = writer.sheets['基金公允价值']
         # Auto-adjust column widths
@@ -50,4 +53,4 @@ def export_fund_report(fund_name: str, period: str, output_dir: str = 'data/outp
             adjusted_width = min(max_length + 2, 50)
             worksheet.column_dimensions[column_letter].width = adjusted_width
 
-    return output_path
+    return str(output_path)

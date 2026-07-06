@@ -892,8 +892,8 @@ def execute_calculate_metric(params, db_path=None):
 
 def _save_mapping_to_config(raw, standard):
     import yaml
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.yaml')
-    with open(config_path, 'r', encoding='utf-8') as f:
+    from core.paths import CONFIG_PATH
+    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
     mappings = config.get('mappings', [])
@@ -915,7 +915,7 @@ def _save_mapping_to_config(raw, standard):
         })
 
     config['mappings'] = mappings
-    with open(config_path, 'w', encoding='utf-8') as f:
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         yaml.dump(config, f, allow_unicode=True, sort_keys=False)
 
 

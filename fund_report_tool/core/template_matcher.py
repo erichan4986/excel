@@ -1,13 +1,12 @@
 import os
 import re
 import difflib
+from pathlib import Path
 from typing import List, Tuple, Optional
 import pandas as pd
 from core import llm_helper
 from core.matcher import load_config
-
-# Template file path (relative from core/ -> ../../excel/)
-_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'excel', '财报模版.xlsx')
+from core.paths import PROJECT_ROOT, TEMPLATES_DIR
 
 # Section boundaries (0-based DataFrame index)
 # Template structure:
@@ -34,15 +33,28 @@ _SUFFIX_PATTERN = r'（[^）]*）|\([^)]*\)'
 
 
 def _get_template_path() -> Optional[str]:
-    """Resolve template file path."""
-    candidates = [
-        _TEMPLATE_PATH,
-        os.path.join(os.path.dirname(__file__), '..', 'excel', '财报模版.xlsx'),
-        '/Users/erichan/Desktop/folder1/excel/财报模版.xlsx',
-    ]
+    """Resolve template file path.
+
+    Resolution order:
+    1. FUND_REPORT_TEMPLATE environment variable (if set)
+    2. PROJECT_ROOT / templates / 财报模版.xlsx
+    3. PROJECT_ROOT / 财报模版.xlsx (for backward compatibility)
+    4. cwd / templates / 财报模版.xlsx
+    5. cwd / 财报模版.xlsx
+    """
+    candidates = []
+    env_template = os.environ.get("FUND_REPORT_TEMPLATE")
+    if env_template:
+        candidates.append(Path(env_template))
+    candidates.extend([
+        TEMPLATES_DIR / "财报模版.xlsx",
+        PROJECT_ROOT / "财报模版.xlsx",
+        Path.cwd() / "templates" / "财报模版.xlsx",
+        Path.cwd() / "财报模版.xlsx",
+    ])
     for p in candidates:
-        if os.path.exists(p):
-            return p
+        if p.exists():
+            return str(p)
     return None
 
 

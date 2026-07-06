@@ -2,11 +2,11 @@ import os
 import difflib
 import yaml
 from core import llm_helper
+from core.paths import CONFIG_PATH
 
 
 def load_config():
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.yaml')
-    with open(config_path, 'r', encoding='utf-8') as f:
+    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 

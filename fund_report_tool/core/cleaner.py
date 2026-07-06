@@ -10,6 +10,7 @@ from core.database import (
 from core import matcher, metrics
 from core import template_matcher
 from core import fund_parser
+from core.paths import CLEANED_DIR
 
 
 def normalize_value(val):
@@ -497,11 +498,10 @@ def clean_and_store(file_path, data_type, db_path=None, overwrite=False, confirm
                 total_records += records_count
 
                 # Save CSV snapshot per sheet
-                snapshot_dir = "data/cleaned"
-                os.makedirs(snapshot_dir, exist_ok=True)
+                CLEANED_DIR.mkdir(parents=True, exist_ok=True)
                 snapshot_name = f"{os.path.basename(file_path)}_{sheet_name}_{period}_cleaned.csv"
-                snapshot_path = os.path.join(snapshot_dir, snapshot_name)
-                df.to_csv(snapshot_path, index=False, encoding='utf-8-sig')
+                snapshot_path = CLEANED_DIR / snapshot_name
+                df.to_csv(str(snapshot_path), index=False, encoding='utf-8-sig')
                 continue
 
             # Standard format parsing

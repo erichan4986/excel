@@ -1,9 +1,9 @@
 database:
   path: data/fund_data.db
 llm:
-  enabled: true
-  api_base: https://api.deepseek.com/v1
-  api_key: ''  # 从环境变量 DEEPSEEK_API_KEY 读取，优先于此配置
+  enabled: false
+  api_base: http://127.0.0.1:11434/v1
+  api_key: ''
   model: deepseek-chat
   timeout: 30
 mappings:

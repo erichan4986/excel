@@ -2,11 +2,12 @@ import os
 import random
 import pandas as pd
 from datetime import datetime
+from core.paths import SAMPLE_DIR
 
 random.seed(42)
 
-OUTPUT_DIR = "data/samples"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_DIR = SAMPLE_DIR
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 COMPANIES = ["公司A", "公司B", "公司C"]
 YEARS = [2023, 2024, 2025]
@@ -150,13 +151,13 @@ def main():
         for year in YEARS:
             # 文件名包含期间信息，方便系统识别
             filename = f"{company}_{year}-12-31.xlsx"
-            filepath = os.path.join(OUTPUT_DIR, filename)
+            filepath = OUTPUT_DIR / filename
 
             bs = generate_balance_sheet(year)
             income = generate_income_statement(year, bs)
             cf = generate_cashflow_statement(year, bs, income)
 
-            with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+            with pd.ExcelWriter(str(filepath), engine='openpyxl') as writer:
                 bs.to_excel(writer, sheet_name='资产负债表', index=False)
                 income.to_excel(writer, sheet_name='利润表', index=False)
                 cf.to_excel(writer, sheet_name='现金流量表', index=False)

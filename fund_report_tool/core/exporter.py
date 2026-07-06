@@ -1,11 +1,13 @@
 import os
 import shutil
+from pathlib import Path
 from typing import Optional
 import pandas as pd
 from openpyxl import load_workbook
 
 from core.database import get_session, ProjectFinancial
 from core.template_matcher import strip_prefixes, _get_template_path
+from core.paths import OUTPUT_DIR
 
 # Extra aliases for DB item_name -> template row name
 _EXPORT_ALIASES = {
@@ -80,7 +82,7 @@ def _find_row_index(item_name: str, template_index: dict) -> Optional[int]:
     return None
 
 
-def export_project_report(project_name: str, period: str, output_dir: str = 'data/outputs') -> str:
+def export_project_report(project_name: str, period: str, output_dir = OUTPUT_DIR) -> str:
     """Export project financial data into a template-formatted xlsx file."""
     template_path = _get_template_path()
     if not template_path:
@@ -101,10 +103,11 @@ def export_project_report(project_name: str, period: str, output_dir: str = 'dat
     template_index = _build_template_index()
 
     # Copy template
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     safe_project = project_name.replace('/', '_').replace('\\', '_')
-    output_path = os.path.join(output_dir, f'{safe_project}_{period}_财报.xlsx')
-    shutil.copy(template_path, output_path)
+    output_path = output_dir / f'{safe_project}_{period}_财报.xlsx'
+    shutil.copy(template_path, str(output_path))
 
     # Load and fill
     wb = load_workbook(output_path)
@@ -121,5 +124,5 @@ def export_project_report(project_name: str, period: str, output_dir: str = 'dat
             excel_row = row_idx + 1
             ws.cell(row=excel_row, column=2, value=item.value)
 
-    wb.save(output_path)
-    return output_path
+    wb.save(str(output_path))
+    return str(output_path)

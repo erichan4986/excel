@@ -1,6 +1,20 @@
 import json
+import os
+import pytest
 from unittest.mock import patch, MagicMock
 from core import chatbot
+from core.database import init_db
+
+
+@pytest.fixture(autouse=True)
+def setup_db():
+    db_path = "data/fund_data.db"
+    if os.path.exists(db_path):
+        os.remove(db_path)
+    init_db(db_path=db_path)
+    yield
+    if os.path.exists(db_path):
+        os.remove(db_path)
 
 
 def test_parse_intent_fill_template():

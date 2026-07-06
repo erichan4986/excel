@@ -1,10 +1,11 @@
 import os
+from pathlib import Path
+from typing import List, Optional
 from dotenv import load_dotenv
 load_dotenv()
 import shutil
 import json
 import yaml
-from typing import List
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -22,14 +23,28 @@ from core.pdf_processor import extract_tables
 from core import chatbot
 from core.exporter import export_project_report
 from core.fund_exporter import export_fund_report
+from core.paths import (
+    UPLOAD_DIR, CLEANED_DIR, OUTPUT_DIR, STATIC_DIR, TEMPLATES_DIR, CONFIG_PATH
+)
+
+
+def _sanitize_filename(filename: Optional[str]) -> str:
+    """Strip directory components from uploaded filenames."""
+    if not filename:
+        return "unnamed"
+    name = Path(filename).name
+    if not name or name in (".", ".."):
+        return "unnamed"
+    return name
+
 
 app = FastAPI(title="基金投后数据自动清洗填表系统")
 
-for d in ["data/uploads", "data/cleaned", "data/outputs", "static", "templates"]:
-    os.makedirs(d, exist_ok=True)
+for d in [UPLOAD_DIR, CLEANED_DIR, OUTPUT_DIR, STATIC_DIR, TEMPLATES_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
 @app.on_event("startup")
@@ -47,12 +62,12 @@ async def api_clean(file: UploadFile = File(...), data_type: str = Form(...), ov
     if data_type not in ('project', 'fund'):
         return JSONResponse({"error": "Invalid data_type, must be 'project' or 'fund'"}, status_code=400)
 
-    upload_dir = "data/uploads"
-    file_path = os.path.join(upload_dir, file.filename)
+    safe_name = _sanitize_filename(file.filename)
+    file_path = UPLOAD_DIR / safe_name
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    result = clean_and_store(file_path, data_type, overwrite=overwrite)
+    result = clean_and_store(str(file_path), data_type, overwrite=overwrite)
     return JSONResponse(result)
 
 
@@ -61,13 +76,13 @@ async def api_clean_batch(files: List[UploadFile] = File(...), data_type: str = 
     if data_type not in ('project', 'fund'):
         return JSONResponse({"error": "Invalid data_type, must be 'project' or 'fund'"}, status_code=400)
 
-    upload_dir = "data/uploads"
     results = []
     for file in files:
-        file_path = os.path.join(upload_dir, file.filename)
+        safe_name = _sanitize_filename(file.filename)
+        file_path = UPLOAD_DIR / safe_name
         with open(file_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
-        result = clean_and_store(file_path, data_type, overwrite=overwrite)
+        result = clean_and_store(str(file_path), data_type, overwrite=overwrite)
         result["filename"] = file.filename
         results.append(result)
 
@@ -100,13 +115,13 @@ async def api_clean_batch(files: List[UploadFile] = File(...), data_type: str = 
 @app.post("/api/parse_template")
 async def api_parse_template(file: UploadFile = File(...)):
     from openpyxl import load_workbook
-    upload_dir = "data/uploads"
-    file_path = os.path.join(upload_dir, file.filename)
+    safe_name = _sanitize_filename(file.filename)
+    file_path = UPLOAD_DIR / safe_name
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
     try:
-        wb = load_workbook(file_path, data_only=True)
+        wb = load_workbook(str(file_path), data_only=True)
         ws = wb.active
 
         headers = []
@@ -134,13 +149,13 @@ async def api_parse_template(file: UploadFile = File(...)):
 @app.post("/api/fill")
 async def api_fill(file: UploadFile = File(...), mapping_overrides: str = Form("{}")):
     overrides = json.loads(mapping_overrides) if mapping_overrides else {}
-    upload_dir = "data/uploads"
-    file_path = os.path.join(upload_dir, file.filename)
+    safe_name = _sanitize_filename(file.filename)
+    file_path = UPLOAD_DIR / safe_name
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
     try:
-        output_path, review_path = fill_template(file_path, overrides)
+        output_path, review_path = fill_template(str(file_path), overrides)
         return JSONResponse({
             "output": os.path.basename(output_path),
             "review": os.path.basename(review_path)
@@ -151,13 +166,13 @@ async def api_fill(file: UploadFile = File(...), mapping_overrides: str = Form("
 
 @app.get("/download/{filename}")
 async def download(filename: str):
-    base_dir = os.path.abspath("data/outputs")
-    file_path = os.path.abspath(os.path.join("data/outputs", filename))
-    if not file_path.startswith(base_dir + os.sep) and file_path != base_dir:
+    base_dir = OUTPUT_DIR.resolve()
+    file_path = (OUTPUT_DIR / filename).resolve()
+    if not str(file_path).startswith(str(base_dir)) and file_path != base_dir:
         raise HTTPException(status_code=403, detail="Access denied")
-    if not os.path.exists(file_path):
+    if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(file_path, filename=filename)
+    return FileResponse(str(file_path), filename=filename)
 
 
 @app.post("/api/smart-match")
@@ -173,11 +188,9 @@ async def api_get_mappings():
 
 @app.post("/api/mappings")
 async def api_update_mappings(mappings: list[dict]):
-    config_path = "config.yaml"
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
+    config = load_config()
     config['mappings'] = mappings
-    with open(config_path, 'w', encoding='utf-8') as f:
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         yaml.dump(config, f, allow_unicode=True, sort_keys=False)
     return JSONResponse({"status": "success"})
 
@@ -390,13 +403,13 @@ async def api_download_fund_report(fund: str, period: str):
 
 @app.post("/api/parse_pdf")
 async def api_parse_pdf(file: UploadFile = File(...)):
-    upload_dir = "data/uploads"
-    file_path = os.path.join(upload_dir, file.filename)
+    safe_name = _sanitize_filename(file.filename)
+    file_path = UPLOAD_DIR / safe_name
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
     try:
-        tables = extract_tables(file_path)
+        tables = extract_tables(str(file_path))
         return JSONResponse({
             "tables_count": len(tables),
             "tables": [t.head(10).to_dict(orient='records') for t in tables]
@@ -410,15 +423,15 @@ async def api_delete_template(request: Request):
     body = await request.json()
     template_path = body.get("template_path", "")
 
-    base_dir = os.path.abspath("data/uploads")
-    file_path = os.path.abspath(template_path)
-    if not file_path.startswith(base_dir + os.sep) and file_path != base_dir:
+    base_dir = UPLOAD_DIR.resolve()
+    file_path = Path(template_path).resolve()
+    if not str(file_path).startswith(str(base_dir)) and file_path != base_dir:
         return JSONResponse({"error": "Access denied"}, status_code=403)
-    if not os.path.exists(file_path):
+    if not file_path.exists():
         return JSONResponse({"error": "File not found"}, status_code=404)
 
     try:
-        os.remove(file_path)
+        file_path.unlink()
         return JSONResponse({"status": "success"})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -539,12 +552,12 @@ async def api_clean_preview(file: UploadFile = File(...), data_type: str = Form(
     if data_type not in ('project', 'fund'):
         return JSONResponse({"error": "Invalid data_type, must be 'project' or 'fund'"}, status_code=400)
 
-    upload_dir = "data/uploads"
-    file_path = os.path.join(upload_dir, file.filename)
+    safe_name = _sanitize_filename(file.filename)
+    file_path = UPLOAD_DIR / safe_name
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    result = cleaner.preview_clean(file_path, data_type)
+    result = cleaner.preview_clean(str(file_path), data_type)
     return JSONResponse(result)
 
 
@@ -556,15 +569,13 @@ async def api_clean_confirm(file: UploadFile = File(...), data_type: str = Form(
 
     confirmed = json.loads(confirmed_mappings) if confirmed_mappings else {}
 
-    upload_dir = "data/uploads"
-    file_path = os.path.join(upload_dir, file.filename)
+    safe_name = _sanitize_filename(file.filename)
+    file_path = UPLOAD_DIR / safe_name
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
     # Persist confirmed mappings to config.yaml and skip_list
-    config_path = "config.yaml"
-    with open(config_path, 'r', encoding='utf-8') as f:
-        config = yaml.safe_load(f)
+    config = load_config()
 
     existing_mappings = {m['standard']: m for m in config.get('mappings', [])}
     skip_list = set(config.get('skip_list', []))
@@ -587,13 +598,13 @@ async def api_clean_confirm(file: UploadFile = File(...), data_type: str = Form(
 
     config['mappings'] = list(existing_mappings.values())
     config['skip_list'] = sorted(skip_list)
-    with open(config_path, 'w', encoding='utf-8') as f:
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         yaml.dump(config, f, allow_unicode=True, sort_keys=False)
 
-    result = cleaner.clean_and_store(file_path, data_type, overwrite=overwrite, confirmed_mappings=confirmed)
+    result = cleaner.clean_and_store(str(file_path), data_type, overwrite=overwrite, confirmed_mappings=confirmed)
     return JSONResponse(result)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

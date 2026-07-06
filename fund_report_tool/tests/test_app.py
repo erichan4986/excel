@@ -3,14 +3,13 @@ import pytest
 from fastapi.testclient import TestClient
 from app import app
 
-TEST_DB = "data/test_app.db"
-
 
 @pytest.fixture
 def client():
     os.makedirs("data/uploads", exist_ok=True)
     os.makedirs("data/outputs", exist_ok=True)
-    return TestClient(app)
+    with TestClient(app) as c:
+        yield c
 
 
 def test_index(client):

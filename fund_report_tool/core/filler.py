@@ -1,12 +1,14 @@
 import os
 import re
 import yaml
+from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.comments import Comment
 from datetime import datetime
 from core.database import get_session, ProjectFinancial, FundFinancial
 from core import matcher
+from core.paths import OUTPUT_DIR, CONFIG_PATH
 
 
 def _get_writable_cell(ws, row, col):
@@ -56,8 +58,7 @@ def _is_likely_company_name(name):
 
 
 def load_config():
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.yaml')
-    with open(config_path, 'r', encoding='utf-8') as f:
+    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
         return yaml.safe_load(f)
 
 
@@ -124,7 +125,7 @@ def fill_template_with_layout(template_path, layout=None, period=None, mapping_o
     }
     如果 layout 为空，则回退到原来的单维度列头扫描逻辑。
     """
-    os.makedirs("data/outputs", exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     wb = load_workbook(template_path)
     ws = wb.active
 
@@ -136,7 +137,7 @@ def fill_template_with_layout(template_path, layout=None, period=None, mapping_o
         period = "unknown"
 
     if not layout:
-        return _fill_legacy(ws, wb, template_path, mapping_overrides, period, db_path)
+        return _fill_legacy(ws, wb, template_path, mapping_overrides, period, db_path, use_llm=use_llm)
 
     # Guard against None values from LLM-parsed layouts
     layout["company_header_row"] = layout.get("company_header_row") or 1
@@ -464,16 +465,16 @@ def fill_template_with_layout(template_path, layout=None, period=None, mapping_o
                     stats["skipped_no_data"] += 1
 
         base_name = os.path.splitext(os.path.basename(template_path))[0]
-        output_path = f"data/outputs/{base_name}_filled.xlsx"
-        review_path = f"data/outputs/{base_name}_review.xlsx"
-        wb.save(output_path)
-        wb.save(review_path)
-        return output_path, review_path, stats
+        output_path = OUTPUT_DIR / f"{base_name}_filled.xlsx"
+        review_path = OUTPUT_DIR / f"{base_name}_review.xlsx"
+        wb.save(str(output_path))
+        wb.save(str(review_path))
+        return str(output_path), str(review_path), stats
     finally:
         session.close()
 
 
-def _fill_legacy(ws, wb, template_path, mapping_overrides, period, db_path):
+def _fill_legacy(ws, wb, template_path, mapping_overrides, period, db_path, use_llm=True):
     """保留原来的单维度列头填充逻辑。"""
     headers = {}
     header_row = 1
