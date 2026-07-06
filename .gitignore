@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Playwright MCP logs/snapshots
+.playwright-mcp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Logs
+*.log
+
+# Databases
+*.db
+*.sqlite3
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/

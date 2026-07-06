@@ -1,0 +1,571 @@
+database:
+  path: data/fund_data.db
+llm:
+  enabled: true
+  api_base: https://api.deepseek.com/v1
+  api_key: ''  # 从环境变量 DEEPSEEK_API_KEY 读取，优先于此配置
+  model: deepseek-chat
+  timeout: 30
+mappings:
+- standard: 净利润
+  aliases:
+  - 净利润
+  - 净收益
+  - 税后利润
+  - 归属净利润
+  category: profit
+  db_source: project
+- standard: 归母净利润
+  aliases:
+  - 归母净利润
+  - 归属于母公司股东的净利润
+  - 归属母公司净利润
+  - 归母净利
+  category: profit
+  db_source: project
+- standard: 总资产
+  aliases:
+  - 总资产
+  - 资产总计
+  - 资产总额
+  - 资产合计
+  category: balance
+  db_source: project
+- standard: 负债合计
+  aliases:
+  - 负债合计
+  - 负债总计
+  - 负债总额
+  - 总负债
+  category: balance
+  db_source: project
+- standard: 营业收入
+  aliases:
+  - 营业收入
+  - 主营业务收入
+  - 营收
+  - 收入
+  category: profit
+  db_source: project
+- standard: 所有者权益合计
+  aliases:
+  - 所有者权益合计
+  - 股东权益合计
+  - 净资产
+  - 权益合计
+  category: balance
+  db_source: project
+- standard: DPI
+  aliases:
+  - DPI
+  - 投入资本分红率
+  - Distribution to Paid-in
+  category: fund
+  db_source: fund
+- standard: 实缴资本
+  aliases:
+  - 实缴资本
+  - 实收资本
+  - 已缴资本
+  - Paid-in Capital
+  - 注册资本
+  category: fund
+  db_source: fund
+- standard: 累计已分配
+  aliases:
+  - 累计已分配
+  - 已分配金额
+  - 累计分配
+  - 累计分红
+  category: fund
+  db_source: fund
+- standard: 未实现价值
+  aliases:
+  - 未实现价值
+  - 未实现估值
+  - 账面价值
+  - 账面估值
+  - 未退出价值
+  category: fund
+  db_source: fund
+- standard: 存货
+  aliases:
+  - Inventory
+  - 存货
+  - 库存商品
+  category: balance
+  db_source: project
+- standard: 营业成本
+  aliases:
+  - 营业成本
+  - 主营业务成本
+  - 成本
+  - 总成本
+  category: profit
+  db_source: project
+- standard: 应收账款
+  aliases:
+  - 应收账款
+  - 应收款项
+  - Receivables
+  - 应收
+  category: balance
+  db_source: project
+- standard: 货币资金
+  aliases:
+  - 现金
+  - 现金及现金等价物
+  - 货币资金
+  - 银行存款
+  category: balance
+  db_source: project
+- standard: 固定资产
+  aliases:
+  - 固定资产
+  - 固资
+  - 固定资产净额
+  category: balance
+  db_source: project
+- standard: 流动资产合计
+  aliases:
+  - 流动资产合计
+  - 流动资产总计
+  - 流动资产总额
+  - 流动资产
+  category: balance
+  db_source: project
+- standard: 非流动资产合计
+  aliases:
+  - 非流动资产合计
+  - 非流动资产总计
+  - 非流动资产
+  category: balance
+  db_source: project
+- standard: 流动负债合计
+  aliases:
+  - 流动负债合计
+  - 流动负债总计
+  - 流动负债
+  category: balance
+  db_source: project
+- standard: 非流动负债合计
+  aliases:
+  - 非流动负债合计
+  - 非流动负债总计
+  - 非流动负债
+  - 长期负债合计
+  category: balance
+  db_source: project
+- standard: 应付账款
+  aliases:
+  - 应付账款
+  - 应付款项
+  - 应付
+  category: balance
+  db_source: project
+- standard: 预收账款
+  aliases:
+  - 预收账款
+  - 预收款项
+  - 预收
+  category: balance
+  db_source: project
+- standard: 其他应收款
+  aliases:
+  - 其他应收款
+  - 其他应收
+  category: balance
+  db_source: project
+- standard: 其他应付款
+  aliases:
+  - 其他应付款
+  - 其他应付
+  category: balance
+  db_source: project
+- standard: 短期借款
+  aliases:
+  - 短期借款
+  - 短借
+  - 短期贷款
+  category: balance
+  db_source: project
+- standard: 长期借款
+  aliases:
+  - 长期借款
+  - 长借
+  - 长期贷款
+  category: balance
+  db_source: project
+- standard: 投资收益
+  aliases:
+  - 投资收益
+  - 投资净收益
+  - 投资损益
+  category: profit
+  db_source: project
+- standard: 管理费用
+  aliases:
+  - 管理开支
+  - 管理成本
+  - 管理费用
+  category: profit
+  db_source: project
+- standard: 销售费用
+  aliases:
+  - 营销费用
+  - 销售成本
+  - 销售费用
+  category: profit
+  db_source: project
+- standard: 财务费用
+  aliases:
+  - 融资成本
+  - 财务成本
+  - 财务费用
+  category: profit
+  db_source: project
+- standard: 所得税费用
+  aliases:
+  - 所得税费用
+  - 所得税
+  - 所得税开支
+  category: profit
+  db_source: project
+- standard: ' EBITDA'
+  aliases:
+  - EBITDA
+  - 息税折旧摊销前利润
+  category: profit
+  db_source: project
+- standard: ' EBIT'
+  aliases:
+  - EBIT
+  - 息税前利润
+  category: profit
+  db_source: project
+- standard: 毛利率
+  aliases:
+  - 毛利率
+  - 销售毛利率
+  category: profit
+  db_source: project
+- standard: 净利率
+  aliases:
+  - 净利率
+  - 销售净利率
+  - 净利润率
+  category: profit
+  db_source: project
+- standard: 资产负债率
+  aliases:
+  - 资产负债率
+  - 负债率
+  - 负债资产比
+  category: balance
+  db_source: project
+- standard: 流动比率
+  aliases:
+  - 流动比率
+  - 流动比
+  category: balance
+  db_source: project
+- standard: 速动比率
+  aliases:
+  - 速动比率
+  - 速动比
+  category: balance
+  db_source: project
+- standard: 总资产周转率
+  aliases:
+  - 总资产周转率
+  - 资产周转率
+  - 总资周转率
+  category: balance
+  db_source: project
+- standard: 净资产收益率
+  aliases:
+  - 净资产收益率
+  - ROE
+  - 权益报酬率
+  category: profit
+  db_source: project
+- standard: 总资产收益率
+  aliases:
+  - 总资产收益率
+  - ROA
+  - 资产报酬率
+  category: profit
+  db_source: project
+- standard: 资本公积
+  aliases:
+  - 资本公积
+  - 资本公积金
+  category: balance
+  db_source: project
+- standard: 盈余公积
+  aliases:
+  - 盈余公积
+  - 盈余公积金
+  category: balance
+  db_source: project
+- standard: 未分配利润
+  aliases:
+  - 未分配利润
+  - 留存收益
+  category: balance
+  db_source: project
+- standard: 无形资产
+  aliases:
+  - 无形资产
+  - 无形资
+  - 专利权
+  - 商标权
+  category: balance
+  db_source: project
+- standard: 商誉
+  aliases:
+  - 商誉
+  - 合并商誉
+  - 收购商誉
+  category: balance
+  db_source: project
+- standard: 长期股权投资
+  aliases:
+  - 长期股权投资
+  - 长期股投
+  - 长投
+  category: balance
+  db_source: project
+- standard: 在建工程
+  aliases:
+  - 在建工程
+  - 在建项目
+  category: balance
+  db_source: project
+- standard: 应付职工薪酬
+  aliases:
+  - 应付职工薪酬
+  - 应付工资
+  - 职工薪酬
+  - 工资
+  category: balance
+  db_source: project
+- standard: 应交税费
+  aliases:
+  - 应交税费
+  - 应交税金
+  - 税费
+  category: balance
+  db_source: project
+- standard: 预付账款
+  aliases:
+  - 预付账款
+  - 预付款项
+  - 预付
+  category: balance
+  db_source: project
+- standard: 递延所得税资产
+  aliases:
+  - 递延所得税资产
+  - 递延税资产
+  category: balance
+  db_source: project
+- standard: 递延所得税负债
+  aliases:
+  - 递延所得税负债
+  - 递延税负债
+  category: balance
+  db_source: project
+- standard: 资产减值损失
+  aliases:
+  - 资产减值损失
+  - 减值损失
+  - 资产减值
+  category: profit
+  db_source: project
+- standard: 信用减值损失
+  aliases:
+  - 信用减值损失
+  - 信用减值
+  - 坏账损失
+  category: profit
+  db_source: project
+- standard: 营业外收入
+  aliases:
+  - 营业外收入
+  - 非营业收入
+  category: profit
+  db_source: project
+- standard: 营业外支出
+  aliases:
+  - 营业外支出
+  - 非营业支出
+  category: profit
+  db_source: project
+- standard: 税金及附加
+  aliases:
+  - 税金及附加
+  - 营业税金及附加
+  - 附加税
+  category: profit
+  db_source: project
+- standard: 研发费用
+  aliases:
+  - 研发费用
+  - 研发支出
+  - 研究开发费用
+  category: profit
+  db_source: project
+- standard: 经营活动现金流量净额
+  aliases:
+  - 经营活动现金流量净额
+  - 经营活动现金流
+  - 经营现金流净额
+  - 经营活动产生的现金流量净额
+  - 经营性现金流
+  - 经营现金流
+  category: cashflow
+  db_source: project
+- standard: 投资活动现金流量净额
+  aliases:
+  - 投资活动现金流量净额
+  - 投资活动现金流
+  - 投资现金流净额
+  - 投资活动产生的现金流量净额
+  category: cashflow
+  db_source: project
+- standard: 筹资活动现金流量净额
+  aliases:
+  - 筹资活动现金流量净额
+  - 筹资活动现金流
+  - 筹资现金流净额
+  - 筹资活动产生的现金流量净额
+  category: cashflow
+  db_source: project
+- standard: 现金及现金等价物净增加额
+  aliases:
+  - 现金及现金等价物净增加额
+  - 现金净增加额
+  - 现金及等价物净增加额
+  category: cashflow
+  db_source: project
+- standard: 期初现金及现金等价物余额
+  aliases:
+  - 期初现金及现金等价物余额
+  - 期初现金余额
+  category: cashflow
+  db_source: project
+- standard: 期末现金及现金等价物余额
+  aliases:
+  - 期末现金及现金等价物余额
+  - 期末现金余额
+  category: cashflow
+  db_source: project
+- standard: ' DPI'
+  aliases:
+  - DPI
+  - 投入资本分红率
+  - Distribution to Paid-in
+  - 现金回报率
+  category: fund
+  db_source: fund
+- standard: ' TVPI'
+  aliases:
+  - TVPI
+  - 总回报倍数
+  - Total Value to Paid-in
+  - 投资回报倍数
+  category: fund
+  db_source: fund
+- standard: ' IRR'
+  aliases:
+  - IRR
+  - 内部收益率
+  - Internal Rate of Return
+  category: fund
+  db_source: fund
+- standard: 已投项目数
+  aliases:
+  - 已投项目数
+  - 投资项目数量
+  - 投资个数
+  category: fund
+  db_source: fund
+- standard: 累计投资金额
+  aliases:
+  - 累计投资金额
+  - 总投资额
+  - 累计投资额
+  category: fund
+  db_source: fund
+- standard: 累计退出金额
+  aliases:
+  - 累计退出金额
+  - 总退出额
+  - 累计退出额
+  - 退出金额
+  category: fund
+  db_source: fund
+- standard: 在管资产规模
+  aliases:
+  - 在管资产规模
+  - AUM
+  - 资产管理规模
+  - 管理资产规模
+  category: fund
+  db_source: fund
+- standard: 基金净值
+  aliases:
+  - 基金净值
+  - NAV
+  - Net Asset Value
+  category: fund
+  db_source: fund
+- standard: 资产总计
+  aliases:
+  - 总资产
+  category: other
+  db_source: project
+- standard: 一、营业收入
+  aliases:
+  - 营业收入
+  category: other
+  db_source: project
+- standard: 减：营业成本
+  aliases:
+  - 营业成本
+  category: other
+  db_source: project
+- standard: 二、营业利润（亏损以"-"号填列）
+  aliases:
+  - 营业利润
+  category: other
+  db_source: project
+- standard: 减：所得税费用
+  aliases:
+  - 所得税费用
+  category: other
+  db_source: project
+- standard: 四、净利润（净亏损以"-"号填列）
+  aliases:
+  - 净利润
+  category: other
+  db_source: project
+- standard: 经营活动产生的现金流量净额
+  aliases:
+  - 经营活动产生的现金流量净额
+  category: other
+  db_source: project
+validation:
+  balance_sheet_tolerance: 0.01
+metrics:
+  inventory_turnover_cost_field: 营业成本
+  inventory_field: 存货
+  receivable_field: 应收账款
+  revenue_field: 营业收入
+fund_projects:
+  主基金:
+  - 项目A
+  - 项目B
+  - 项目C
+skip_list: []

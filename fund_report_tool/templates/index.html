@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>基金投后数据自动清洗填表系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <style>
+        .tab-content { padding: 20px 0; }
+        .result-box { max-height: 400px; overflow-y: auto; }
+        .mapping-row { margin-bottom: 8px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1 class="my-4">基金投后数据自动清洗填表系统</h1>
+
+    <ul class="nav nav-tabs" id="mainTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="clean-tab" data-bs-toggle="tab" data-bs-target="#clean" type="button">数据清洗存档</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="fill-tab" data-bs-toggle="tab" data-bs-target="#fill" type="button">LP表格填写</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="mapping-tab" data-bs-toggle="tab" data-bs-target="#mapping" type="button">映射管理</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="browse-tab" data-bs-toggle="tab" data-bs-target="#browse" type="button">数据浏览</button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="mainTabContent">
+        <!-- Tab 1: Data Cleaning -->
+        <div class="tab-pane fade show active" id="clean" role="tabpanel">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label">数据类型</label>
+                        <select id="cleanType" class="form-select" onchange="toggleTemplateMode()">
+                            <option value="project">项目数据</option>
+                            <option value="fund">基金数据</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">上传Excel文件</label>
+                        <input type="file" id="cleanFile" class="form-control" accept=".xlsx,.xls" multiple>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="templateMode">
+                        <label class="form-check-label" for="templateMode">
+                            启用模板对齐模式（按财报模版标准化科目）
+                        </label>
+                    </div>
+                    <button class="btn btn-primary" onclick="startClean()">开始清洗</button>
+                    <button class="btn btn-success d-none" id="confirmCleanBtn" onclick="submitCleanConfirm()">确认入库</button>
+                    <div id="cleanProgress" class="mt-3 d-none">
+                        <div class="spinner-border spinner-border-sm" role="status"></div>
+                        <span class="ms-2">处理中...</span>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div id="cleanResult" class="result-box"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Chatbox -->
+        <div class="tab-pane fade" id="fill" role="tabpanel">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="mb-3">
+                        <label class="form-label">上传LP模板</label>
+                        <input type="file" id="chatTemplateFile" class="form-control" accept=".xlsx,.xls">
+                    </div>
+                    <div class="mb-3">
+                        <button class="btn btn-outline-danger btn-sm" id="deleteTemplateBtn" onclick="deleteTemplate()" style="display:none;">删除当前模板</button>
+                        <span id="templateName" class="ms-2 text-muted small"></span>
+                    </div>
+                    <div class="alert alert-info">
+                        <small>在右侧对话框描述模板结构，例如：<br>"公司名在第一列，指标在第一行，填2024年数据"</small>
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <div id="chatBox" style="height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; padding: 12px; background: #f8f9fa;">
+                        <div class="mb-2"><span class="badge bg-secondary">系统</span> <span>你好！请上传LP模板，然后告诉我模板的行列结构，我来帮你填表或查询数据。</span></div>
+                    </div>
+                    <div class="input-group mt-2">
+                        <input type="text" id="chatInput" class="form-control" placeholder="描述你的需求..." onkeydown="if(event.key==='Enter')sendChat()">
+                        <button class="btn btn-primary" onclick="sendChat()">发送</button>
+                    </div>
+                </div>
+            </div>
+            <div id="chatResult" class="mt-3"></div>
+        </div>
+
+        <!-- Tab 3: Mapping Management -->
+        <div class="tab-pane fade" id="mapping" role="tabpanel">
+            <div class="mb-3">
+                <button class="btn btn-primary" onclick="loadMappings()">刷新映射</button>
+                <button class="btn btn-success" onclick="addMapping()">添加映射</button>
+            </div>
+            <div id="mappingList"></div>
+            <button class="btn btn-warning" onclick="saveMappings()">保存映射</button>
+        </div>
+
+        <!-- Tab 4: Data Browse -->
+        <div class="tab-pane fade" id="browse" role="tabpanel">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <label class="form-label">数据类型</label>
+                        <select id="browseType" class="form-select" onchange="toggleBrowseMode()">
+                            <option value="project">项目数据</option>
+                            <option value="fund">基金数据</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" id="browseEntityLabel">选择项目</label>
+                        <select id="browseEntity" class="form-select" onchange="loadEntityPeriods()">
+                            <option value="">-- 请选择 --</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">选择期间</label>
+                        <select id="browsePeriod" class="form-select" onchange="loadData()">
+                            <option value="">-- 请选择 --</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="loadBrowseEntities()">刷新列表</button>
+                    <button class="btn btn-success" onclick="downloadBrowseReport()">下载财报</button>
+                    <button class="btn btn-danger" onclick="deleteBrowsePeriod()">删除数据</button>
+                </div>
+                <div class="col-md-9">
+                    <div id="browseSummaryBox"></div>
+                    <h6 id="browseDataTitle">财务数据</h6>
+                    <div id="browseDataTable" class="result-box mb-3"></div>
+                    <h6 id="browseMetricsTitle">衍生指标</h6>
+                    <div id="browseMetricsTable" class="result-box"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Overwrite Confirm Modal -->
+<div class="modal fade" id="overwriteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">发现重复数据</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>以下项目+期间的数据已存在，是否覆盖？</p>
+        <ul id="duplicateList"></ul>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">跳过</button>
+        <button type="button" class="btn btn-danger" onclick="confirmOverwrite()">覆盖并重新清洗</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// --- Tab 1: Data Cleaning ---
+let pendingFiles = [];
+let pendingDataType = '';
+
+function toggleTemplateMode() {
+    const type = document.getElementById('cleanType').value;
+    const templateCheckbox = document.getElementById('templateMode').parentElement;
+    if (type === 'fund') {
+        templateCheckbox.classList.add('d-none');
+        document.getElementById('templateMode').checked = false;
+    } else {
+        templateCheckbox.classList.remove('d-none');
+    }
+}
+
+async function startClean(overwrite = false) {
+    const fileInput = document.getElementById('cleanFile');
+    const type = document.getElementById('cleanType').value;
+    const templateMode = document.getElementById('templateMode').checked;
+    if (!fileInput.files.length) { alert('请选择文件'); return; }
+
+    if (templateMode && fileInput.files.length > 1) {
+        alert('模板对齐模式暂不支持批量文件，请逐个上传');
+        return;
+    }
+
+    if (!overwrite) {
+        pendingFiles = Array.from(fileInput.files);
+        pendingDataType = type;
+    }
+
+    const filesToSend = overwrite ? pendingFiles : Array.from(fileInput.files);
+
+    if (templateMode) {
+        const form = new FormData();
+        form.append('file', filesToSend[0]);
+        form.append('data_type', type);
+
+        document.getElementById('cleanProgress').classList.remove('d-none');
+        const res = await fetch('/api/clean-preview', { method: 'POST', body: form });
+        const data = await res.json();
+        document.getElementById('cleanProgress').classList.add('d-none');
+
+        if (data.status === 'error') {
+            document.getElementById('cleanResult').innerHTML = `<div class="alert alert-danger">预览失败：${data.error}</div>`;
+            document.getElementById('confirmCleanBtn').classList.add('d-none');
+            return;
+        }
+
+        cleanPreviewData = data;
+        cleanPreviewFile = filesToSend[0];
+        previewOverrides = {};
+        showCleanPreview(data);
+        document.getElementById('confirmCleanBtn').classList.remove('d-none');
+        return;
+    }
+
+    const form = new FormData();
+    form.append('data_type', type);
+    form.append('overwrite', overwrite ? 'true' : 'false');
+    for (const file of filesToSend) {
+        form.append('files', file);
+    }
+
+    document.getElementById('cleanProgress').classList.remove('d-none');
+    const res = await fetch('/api/clean-batch', { method: 'POST', body: form });
+    const data = await res.json();
+    document.getElementById('cleanProgress').classList.add('d-none');
+
+    if (data.status === 'confirm' && data.duplicates > 0) {
+        let listHtml = '';
+        for (const r of data.results) {
+            if (r.duplicates) {
+                for (const d of r.duplicates) {
+                    const name = d.project_name ? d.project_name + ' ' : '基金 ';
+                    listHtml += `<li>${name} ${d.period}</li>`;
+                }
+            }
+        }
+        document.getElementById('duplicateList').innerHTML = listHtml;
+        const modal = new bootstrap.Modal(document.getElementById('overwriteModal'));
+        modal.show();
+        return;
+    }
+
+    let html = `<div class="alert alert-info">共处理 ${data.total} 个文件：成功 ${data.success}，警告 ${data.warning}，错误 ${data.error}${data.duplicates ? '，重复跳过 ' + data.duplicates : ''}</div>`;
+    if (data.results) {
+        html += '<table class="table table-sm"><thead><tr><th>文件名</th><th>状态</th><th>期间</th><th>记录数</th></tr></thead><tbody>';
+        for (const r of data.results) {
+            html += `<tr><td>${r.filename}</td><td>${r.status}</td><td>${r.period || '-'}</td><td>${r.records_processed || '-'}</td></tr>`;
+        }
+        html += '</tbody></table>';
+    }
+    document.getElementById('cleanResult').innerHTML = html;
+}
+
+function confirmOverwrite() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('overwriteModal'));
+    modal.hide();
+    startClean(true);
+}
+
+// --- Template Mode Globals ---
+let cleanPreviewData = null;
+let cleanPreviewFile = null;
+let previewOverrides = {};
+
+function showCleanPreview(data) {
+    const preview = data.preview;
+    const stats = data.stats;
+    const standardNames = data.standard_names || [];
+
+    let html = `<div class="alert alert-info"><b>${data.project_name} ${data.period}</b> — 共 ${stats.total} 个指标：高置信度 <span class="text-success">${stats.auto_confirmed}</span> 个，待确认 <span class="text-warning">${stats.needs_review}</span> 个，未匹配 <span class="text-danger">${stats.unmatched}</span> 个${stats.auto_skip ? '，<span class="text-muted">零值自动跳过 ' + stats.auto_skip + ' 个</span>' : ''}</div>`;
+
+    const stdOptions = standardNames.map(s => `<option value="${s}">${s}</option>`).join('');
+
+    for (const [sheetName, items] of Object.entries(preview)) {
+        if (!items.length) continue;
+        html += `<h6 class="mt-3">${sheetName}</h6>`;
+        html += '<div style="max-height: 300px; overflow-y: auto;">';
+        html += '<table class="table table-sm table-bordered"><thead><tr><th>原始指标名</th><th>匹配标准科目</th><th>置信度</th><th>报表类型</th><th>操作</th></tr></thead><tbody>';
+
+        for (const item of items) {
+            if (item.status === 'auto_skip') continue;
+
+            let rowClass = '';
+            if (item.status === 'auto_confirmed') rowClass = 'table-success';
+            else if (item.status === 'needs_review') rowClass = 'table-warning';
+            else rowClass = 'table-danger';
+
+            let actionHtml = '';
+            if (item.status === 'auto_confirmed') {
+                actionHtml = '<span class="badge bg-success">自动通过</span>';
+            } else {
+                actionHtml = `<select class="form-select form-select-sm" onchange="updatePreviewMapping('${item.raw}', this.value)" style="width: 180px; display: inline-block;">
+                    <option value="">-- 请选择 --</option>
+                    <option value="__SKIP__">略过（加入skip_list）</option>
+                    ${stdOptions}
+                </select>`;
+            }
+
+            html += `<tr class="${rowClass}" data-raw="${item.raw}">
+                <td>${item.raw}</td>
+                <td>${item.standard || '-'}</td>
+                <td>${item.confidence}</td>
+                <td>${item.report_type || '-'}</td>
+                <td>${actionHtml}</td>
+            </tr>`;
+        }
+
+        html += '</tbody></table></div>';
+    }
+
+    document.getElementById('cleanResult').innerHTML = html;
+}
+
+function updatePreviewMapping(raw, standard) {
+    if (standard === '__SKIP__') {
+        previewOverrides[raw] = null;
+    } else if (standard) {
+        previewOverrides[raw] = standard;
+    } else {
+        delete previewOverrides[raw];
+    }
+}
+
+async function submitCleanConfirm() {
+    if (!cleanPreviewFile || !cleanPreviewData) return;
+
+    const confirmedMappings = {};
+    for (const [sheetName, items] of Object.entries(cleanPreviewData.preview)) {
+        for (const item of items) {
+            if (item.status === 'auto_skip') continue;
+
+            const raw = item.raw;
+            if (raw in previewOverrides) {
+                confirmedMappings[raw] = previewOverrides[raw];
+            } else if (item.status === 'auto_confirmed' && item.standard) {
+                confirmedMappings[raw] = item.standard;
+            }
+        }
+    }
+
+    const form = new FormData();
+    form.append('file', cleanPreviewFile);
+    form.append('data_type', cleanPreviewData.data_type || document.getElementById('cleanType').value);
+    form.append('confirmed_mappings', JSON.stringify(confirmedMappings));
+
+    document.getElementById('cleanProgress').classList.remove('d-none');
+    const res = await fetch('/api/clean-confirm', { method: 'POST', body: form });
+    const data = await res.json();
+    document.getElementById('cleanProgress').classList.add('d-none');
+
+    document.getElementById('confirmCleanBtn').classList.add('d-none');
+    cleanPreviewData = null;
+    cleanPreviewFile = null;
+    previewOverrides = {};
+
+    let html = `<div class="alert alert-${data.status === 'success' ? 'info' : data.status === 'warning' ? 'warning' : 'danger'}">
+        <b>入库结果：${data.status}</b> — 期间 ${data.period || '-'}，记录数 ${data.records_processed || 0}
+    </div>`;
+    if (data.warnings && data.warnings.length) {
+        html += '<ul class="text-muted small">' + data.warnings.map(w => `<li>${w}</li>`).join('') + '</ul>';
+    }
+    document.getElementById('cleanResult').innerHTML = html;
+}
+
+// --- Tab 2: Chatbox ---
+let chatContext = JSON.parse(localStorage.getItem('chatContext') || '{}');
+let chatHistory = [];
+
+async function sendChat() {
+    const input = document.getElementById('chatInput');
+    const message = input.value.trim();
+    if (!message) return;
+
+    appendChat('user', message);
+    input.value = '';
+
+    const fileInput = document.getElementById('chatTemplateFile');
+    if (fileInput.files.length && !chatContext.template_path) {
+        const form = new FormData();
+        form.append('file', fileInput.files[0]);
+        const uploadRes = await fetch('/api/parse_template', {method: 'POST', body: form});
+        const uploadData = await uploadRes.json();
+        chatContext.template_path = 'data/uploads/' + fileInput.files[0].name;
+        chatContext.parsed_headers = uploadData;
+        updateTemplateUI();
+    }
+
+    const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message, context: chatContext})
+    });
+    const data = await res.json();
+
+    appendChat('bot', data.response);
+
+    if (data.intent === 'fill_template' && data.data) {
+        if (data.data.success) {
+            let infoHtml = '';
+            if (data.data.message) {
+                infoHtml = `<div class="alert alert-info mt-2"><small>${data.data.message}</small></div>`;
+            }
+            // Save context for confirm / reject operations
+            if (data.data.pending_llm_queue && data.data.pending_llm_queue.length > 0) {
+                chatContext.pending_llm_queue = data.data.pending_llm_queue;
+                chatContext.current_llm_index = data.data.current_llm_index || 0;
+                chatContext.confirmed_llm_mappings = data.data.confirmed_llm_mappings || {};
+                chatContext.rejected_llm_mappings = data.data.rejected_llm_mappings || [];
+            }
+            if (data.params && data.params.layout) {
+                chatContext.layout = data.params.layout;
+            }
+            if (data.params && data.params.period) {
+                chatContext.period = data.params.period;
+            }
+            let actionBtns = '';
+            if (chatContext.pending_llm_queue && chatContext.current_llm_index < chatContext.pending_llm_queue.length) {
+                actionBtns = `
+                    <button class="btn btn-success mt-2 me-2" onclick="confirmPendingMappings()">确认</button>
+                    <button class="btn btn-outline-danger mt-2" onclick="rejectPendingMappings()">不对</button>
+                `;
+            }
+            document.getElementById('chatResult').innerHTML = `
+                <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
+                <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
+                ${infoHtml}
+                ${actionBtns}
+            `;
+        } else {
+            document.getElementById('chatResult').innerHTML = `
+                <div class="alert alert-danger">填表失败：${data.data.error || '未知错误'}</div>
+            `;
+        }
+    }
+
+    if (data.intent === 'confirm_mappings' && data.data) {
+        if (data.data.success) {
+            chatContext.current_llm_index = data.data.current_llm_index;
+            chatContext.confirmed_llm_mappings = data.data.confirmed_llm_mappings;
+            chatContext.rejected_llm_mappings = data.data.rejected_llm_mappings;
+            if (data.data.done) {
+                delete chatContext.pending_llm_queue;
+                delete chatContext.current_llm_index;
+                delete chatContext.confirmed_llm_mappings;
+                delete chatContext.rejected_llm_mappings;
+                document.getElementById('chatResult').innerHTML = `
+                    <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
+                    <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
+                    <div class="alert alert-success mt-2">${data.data.message}</div>
+                `;
+            } else {
+                let actionBtns = `
+                    <button class="btn btn-success mt-2 me-2" onclick="confirmPendingMappings()">确认</button>
+                    <button class="btn btn-outline-danger mt-2" onclick="rejectPendingMappings()">不对</button>
+                `;
+                document.getElementById('chatResult').innerHTML = `
+                    <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
+                    <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
+                    <div class="alert alert-info mt-2"><small>${data.data.message}</small></div>
+                    ${actionBtns}
+                `;
+            }
+        } else {
+            document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${data.data.error || '保存失败'}</div>`;
+        }
+    }
+
+    if (data.intent === 'reject_mappings' && data.data) {
+        if (data.data.success) {
+            chatContext.current_llm_index = data.data.current_llm_index;
+            chatContext.confirmed_llm_mappings = data.data.confirmed_llm_mappings;
+            chatContext.rejected_llm_mappings = data.data.rejected_llm_mappings;
+            if (data.data.done) {
+                delete chatContext.pending_llm_queue;
+                delete chatContext.current_llm_index;
+                delete chatContext.confirmed_llm_mappings;
+                delete chatContext.rejected_llm_mappings;
+                document.getElementById('chatResult').innerHTML = `
+                    <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
+                    <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
+                    <div class="alert alert-success mt-2">${data.data.message}</div>
+                `;
+            } else {
+                let actionBtns = `
+                    <button class="btn btn-success mt-2 me-2" onclick="confirmPendingMappings()">确认</button>
+                    <button class="btn btn-outline-danger mt-2" onclick="rejectPendingMappings()">不对</button>
+                `;
+                document.getElementById('chatResult').innerHTML = `
+                    <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
+                    <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
+                    <div class="alert alert-info mt-2"><small>${data.data.message}</small></div>
+                    ${actionBtns}
+                `;
+            }
+        } else {
+            document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${data.data.error || '处理失败'}</div>`;
+        }
+    }
+
+    if (data.intent === 'query_data' && data.data && data.data.success) {
+        let html = '<table class="table table-sm"><thead><tr><th>期间</th><th>指标</th><th>数值</th></tr></thead><tbody>';
+        for (const row of data.data.data) {
+            html += `<tr><td>${row['期间']}</td><td>${row['指标']}</td><td>${row['数值'] !== null ? row['数值'] : '-'}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        document.getElementById('chatResult').innerHTML = html;
+    }
+
+    if (data.intent === 'clarify_intent' && data.data) {
+        let html = `<div class="alert alert-info">${data.response}</div>`;
+        if (data.data.options && data.data.options.length > 0) {
+            html += '<div class="mt-2">';
+            for (const opt of data.data.options) {
+                html += `<button class="btn btn-outline-primary btn-sm me-2 mb-2" onclick="sendClarifyIntent('${opt.intent}')">${opt.label}</button>`;
+            }
+            html += '</div>';
+        }
+        document.getElementById('chatResult').innerHTML = html;
+    }
+
+    if (data.intent === 'show_fund_data' && data.data && data.data.success) {
+        let html = `<div class="alert alert-info">${data.data.fund_name} ${data.data.period} 基金数据</div>`;
+        html += `<div class="row mb-2">`;
+        html += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">投资项目数</small><div class="h5 mb-0">${data.data.project_count}</div></div></div></div>`;
+        html += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">总成本</small><div class="h5 mb-0">${data.data.total_cost.toLocaleString()}</div></div></div></div>`;
+        html += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">总公允价值</small><div class="h5 mb-0">${data.data.total_fair_value.toLocaleString()}</div></div></div></div>`;
+        html += `</div>`;
+        html += '<table class="table table-sm"><thead><tr><th>项目</th><th>剩余投资成本</th><th>项目公允价值</th><th>累计退出回收资金</th><th>备注</th><th>最后回款日期</th></tr></thead><tbody>';
+        for (const item of data.data.items) {
+            html += `<tr><td>${item.project_name}</td><td>${item.cost !== null ? item.cost.toLocaleString() : '-'}</td><td>${item.fair_value !== null ? item.fair_value.toLocaleString() : '-'}</td><td>${item.total_return !== null ? item.total_return.toLocaleString() : '-'}</td><td>${item.remark || '-'}</td><td>${item.last_payment_date || '-'}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        document.getElementById('chatResult').innerHTML = html;
+    }
+
+    if (data.intent === 'draw_chart' && data.data && data.data.success) {
+        const chartId = 'chart-' + Date.now();
+        const chartType = data.data.chart_type || 'line';
+        const title = data.data.title || '';
+        const xAxis = data.data.x_axis || [];
+        const series = data.data.series || [];
+
+        let chartHtml = `
+            <div class="card mt-2" style="background:#fff;">
+                <div class="card-body p-2">
+                    <div id="${chartId}" style="width:100%;height:320px;"></div>
+                    <div class="text-center mt-2">
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="switchChartType('${chartId}', 'line')">折线图</button>
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="switchChartType('${chartId}', 'bar')">柱状图</button>
+                        <button class="btn btn-sm btn-outline-primary" onclick="switchChartType('${chartId}', 'pie')">饼图</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.getElementById('chatResult').innerHTML = chartHtml;
+
+        // Store chart data for switching
+        window._chartData = window._chartData || {};
+        window._chartData[chartId] = { chartType, title, xAxis, series };
+
+        // Render chart
+        requestAnimationFrame(() => {
+            renderChart(chartId, chartType, title, xAxis, series);
+        });
+    }
+
+    if (data.intent === 'draw_chart' && data.data && !data.data.success) {
+        document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${data.data.error || '绘图失败'}</div>`;
+    }
+
+    if (data.intent === 'calculate_metric' && data.data) {
+        if (data.data.success) {
+            document.getElementById('chatResult').innerHTML = `<div class="alert alert-info"><pre style="white-space:pre-wrap;margin:0;">${data.data.message}</pre></div>`;
+        } else {
+            document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${data.data.error || '计算失败'}</div>`;
+        }
+    }
+
+    // Persist chat context so pending_llm_queue survive page refresh
+    localStorage.setItem('chatContext', JSON.stringify(chatContext));
+}
+
+function appendChat(role, text) {
+    const box = document.getElementById('chatBox');
+    const badge = role === 'user' ? '<span class="badge bg-primary">你</span>' : '<span class="badge bg-secondary">系统</span>';
+    box.innerHTML += `<div class="mb-2">${badge} <span>${text}</span></div>`;
+    box.scrollTop = box.scrollHeight;
+}
+
+function confirmPendingMappings() {
+    document.getElementById('chatInput').value = '确认';
+    sendChat();
+}
+
+function rejectPendingMappings() {
+    document.getElementById('chatInput').value = '不对';
+    sendChat();
+}
+
+function sendClarifyIntent(intent) {
+    document.getElementById('chatInput').value = intent;
+    sendChat();
+}
+
+function updateTemplateUI() {
+    const nameSpan = document.getElementById('templateName');
+    const btn = document.getElementById('deleteTemplateBtn');
+    if (chatContext.template_path) {
+        nameSpan.textContent = '已上传: ' + chatContext.template_path.split('/').pop();
+        btn.style.display = 'inline-block';
+    } else {
+        nameSpan.textContent = '';
+        btn.style.display = 'none';
+    }
+}
+
+async function deleteTemplate() {
+    if (!chatContext.template_path) return;
+    if (!confirm('确定要删除当前模板吗？')) return;
+
+    const res = await fetch('/api/delete_template', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({template_path: chatContext.template_path})
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+        delete chatContext.template_path;
+        delete chatContext.parsed_headers;
+        document.getElementById('chatTemplateFile').value = '';
+        updateTemplateUI();
+        appendChat('bot', '已删除模板。');
+    } else {
+        appendChat('bot', '删除失败：' + (data.error || '未知错误'));
+    }
+    localStorage.setItem('chatContext', JSON.stringify(chatContext));
+}
+
+// --- Tab 3: Mapping Management ---
+let allMappings = [];
+
+async function loadMappings() {
+    const res = await fetch('/api/mappings');
+    const data = await res.json();
+    allMappings = data.mappings;
+    renderMappingList();
+}
+
+function renderMappingList() {
+    let html = '';
+    for (let i = 0; i < allMappings.length; i++) {
+        const m = allMappings[i];
+        html += `<div class="row mapping-row align-items-center">
+            <div class="col-3"><input class="form-control form-control-sm" value="${m.standard}" onchange="allMappings[${i}].standard=this.value"></div>
+            <div class="col-7"><input class="form-control form-control-sm" value="${(m.aliases || []).join(', ')}" onchange="allMappings[${i}].aliases=this.value.split(',').map(s=>s.trim())"></div>
+            <div class="col-2"><button class="btn btn-sm btn-danger" onclick="allMappings.splice(${i},1);renderMappingList();">删除</button></div>
+        </div>`;
+    }
+    document.getElementById('mappingList').innerHTML = html;
+}
+
+function addMapping() {
+    allMappings.push({ standard: '新指标', aliases: ['别名1'], category: 'other' });
+    renderMappingList();
+}
+
+async function saveMappings() {
+    const res = await fetch('/api/mappings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(allMappings)
+    });
+    const data = await res.json();
+    alert(data.status === 'success' ? '保存成功' : '保存失败');
+}
+
+// Load on tab switch
+document.getElementById('mapping-tab').addEventListener('shown.bs.tab', loadMappings);
+
+// --- Tab 4: Data Browse ---
+
+function toggleBrowseMode() {
+    const mode = document.getElementById('browseType').value;
+    const entityLabel = document.getElementById('browseEntityLabel');
+    const dataTitle = document.getElementById('browseDataTitle');
+    const metricsTitle = document.getElementById('browseMetricsTitle');
+
+    if (mode === 'fund') {
+        entityLabel.textContent = '选择基金';
+        dataTitle.textContent = '基金项目明细';
+        metricsTitle.textContent = '基金汇总';
+    } else {
+        entityLabel.textContent = '选择项目';
+        dataTitle.textContent = '财务数据';
+        metricsTitle.textContent = '衍生指标';
+    }
+
+    document.getElementById('browseEntity').innerHTML = '<option value="">-- 请选择 --</option>';
+    document.getElementById('browsePeriod').innerHTML = '<option value="">-- 请选择 --</option>';
+    document.getElementById('browseDataTable').innerHTML = '';
+    document.getElementById('browseMetricsTable').innerHTML = '';
+    document.getElementById('browseSummaryBox').innerHTML = '';
+    loadBrowseEntities();
+}
+
+async function loadBrowseEntities() {
+    const mode = document.getElementById('browseType').value;
+    const sel = document.getElementById('browseEntity');
+    sel.innerHTML = '<option value="">-- 请选择 --</option>';
+    document.getElementById('browsePeriod').innerHTML = '<option value="">-- 请选择 --</option>';
+    document.getElementById('browseDataTable').innerHTML = '';
+    document.getElementById('browseMetricsTable').innerHTML = '';
+    document.getElementById('browseSummaryBox').innerHTML = '';
+
+    if (mode === 'fund') {
+        const res = await fetch('/api/funds');
+        const data = await res.json();
+        sel.innerHTML += data.funds.map(f => `<option value="${f}">${f}</option>`).join('');
+    } else {
+        await loadProjects();
+    }
+}
+
+async function loadEntityPeriods() {
+    const mode = document.getElementById('browseType').value;
+    const entity = document.getElementById('browseEntity').value;
+    const sel = document.getElementById('browsePeriod');
+    sel.innerHTML = '<option value="">-- 请选择 --</option>';
+    if (!entity) return;
+
+    if (mode === 'fund') {
+        const res = await fetch(`/api/fund_periods?fund=${encodeURIComponent(entity)}`);
+        const data = await res.json();
+        sel.innerHTML += data.periods.map(p => `<option value="${p}">${p}</option>`).join('');
+    } else {
+        await loadPeriods();
+    }
+}
+
+async function loadData() {
+    const mode = document.getElementById('browseType').value;
+    if (mode === 'fund') {
+        await loadFundData();
+    } else {
+        await loadProjectData();
+    }
+}
+
+async function loadFundData() {
+    const fund = document.getElementById('browseEntity').value;
+    const period = document.getElementById('browsePeriod').value;
+    if (!fund || !period) return;
+
+    const res = await fetch(`/api/fund_data?fund=${encodeURIComponent(fund)}&period=${encodeURIComponent(period)}`);
+    const data = await res.json();
+
+    // Summary cards
+    const summary = data.summary || {};
+    let summaryHtml = `
+        <div class="row mb-3">
+            <div class="col-md-6">
+                <div class="card bg-light">
+                    <div class="card-body p-2">
+                        <small class="text-muted">总成本</small>
+                        <div class="h5 mb-0">${summary.total_cost !== undefined ? summary.total_cost.toLocaleString() : '-'}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card bg-light">
+                    <div class="card-body p-2">
+                        <small class="text-muted">总公允价值</small>
+                        <div class="h5 mb-0">${summary.total_fair_value !== undefined ? summary.total_fair_value.toLocaleString() : '-'}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    document.getElementById('browseSummaryBox').innerHTML = summaryHtml;
+
+    // Detail table
+    let html = '<table class="table table-sm"><thead><tr><th>项目</th><th>剩余投资成本</th><th>项目公允价值</th><th>累计退出回收资金</th><th>备注</th><th>最后回款日期</th></tr></thead><tbody>';
+    for (const item of data.items) {
+        html += `<tr>
+            <td>${item.project_name}</td>
+            <td>${item.cost !== null ? item.cost.toLocaleString() : '-'}</td>
+            <td>${item.fair_value !== null ? item.fair_value.toLocaleString() : '-'}</td>
+            <td>${item.total_return !== null ? item.total_return.toLocaleString() : '-'}</td>
+            <td>${item.remark || '-'}</td>
+            <td>${item.last_payment_date || '-'}</td>
+        </tr>`;
+    }
+    html += '</tbody></table>';
+    document.getElementById('browseDataTable').innerHTML = html;
+
+    // Metrics area: show summary again as simple table
+    let mhtml = '<table class="table table-sm"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody>';
+    mhtml += `<tr><td>项目数量</td><td>${data.items.length}</td></tr>`;
+    mhtml += `<tr><td>总成本</td><td>${summary.total_cost !== undefined ? summary.total_cost.toLocaleString() : '-'}</td></tr>`;
+    mhtml += `<tr><td>总公允价值</td><td>${summary.total_fair_value !== undefined ? summary.total_fair_value.toLocaleString() : '-'}</td></tr>`;
+    if (summary.total_cost > 0 && summary.total_fair_value !== undefined) {
+        const ratio = ((summary.total_fair_value / summary.total_cost - 1) * 100).toFixed(2);
+        mhtml += `<tr><td>公允价值/成本比例</td><td>${ratio}%</td></tr>`;
+    }
+    mhtml += '</tbody></table>';
+    document.getElementById('browseMetricsTable').innerHTML = mhtml;
+}
+
+async function loadProjectData() {
+    const project = document.getElementById('browseEntity').value;
+    const period = document.getElementById('browsePeriod').value;
+    if (!project || !period) return;
+
+    document.getElementById('browseSummaryBox').innerHTML = '';
+
+    const [dataRes, metricsRes] = await Promise.all([
+        fetch(`/api/data?project=${encodeURIComponent(project)}&period=${encodeURIComponent(period)}`),
+        fetch(`/api/metrics_data?project=${encodeURIComponent(project)}&period=${encodeURIComponent(period)}`)
+    ]);
+    const data = await dataRes.json();
+    const metrics = await metricsRes.json();
+
+    let html = '<table class="table table-sm"><thead><tr><th>报表类型</th><th>指标</th><th>数值</th></tr></thead><tbody>';
+    for (const item of data.items) {
+        html += `<tr><td>${item.report_type}</td><td>${item.item_name}</td><td>${item.value !== null ? item.value : '-'}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    document.getElementById('browseDataTable').innerHTML = html;
+
+    let mhtml = '<table class="table table-sm"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody>';
+    for (const m of metrics.metrics) {
+        mhtml += `<tr><td>${m.metric_name}</td><td>${m.metric_value !== null ? m.metric_value.toFixed(4) : '-'}</td></tr>`;
+    }
+    mhtml += '</tbody></table>';
+    document.getElementById('browseMetricsTable').innerHTML = mhtml;
+}
+
+async function loadProjects() {
+    const res = await fetch('/api/projects');
+    const data = await res.json();
+    const sel = document.getElementById('browseEntity');
+    sel.innerHTML = '<option value="">-- 请选择 --</option>' +
+        data.projects.map(p => `<option value="${p}">${p}</option>`).join('');
+    document.getElementById('browsePeriod').innerHTML = '<option value="">-- 请选择 --</option>';
+    document.getElementById('browseDataTable').innerHTML = '';
+    document.getElementById('browseMetricsTable').innerHTML = '';
+    document.getElementById('browseSummaryBox').innerHTML = '';
+}
+
+async function loadPeriods() {
+    const project = document.getElementById('browseEntity').value;
+    if (!project) return;
+    const res = await fetch(`/api/periods?project=${encodeURIComponent(project)}`);
+    const data = await res.json();
+    const sel = document.getElementById('browsePeriod');
+    sel.innerHTML = '<option value="">-- 请选择 --</option>' +
+        data.periods.map(p => `<option value="${p}">${p}</option>`).join('');
+}
+
+async function downloadBrowseReport() {
+    const mode = document.getElementById('browseType').value;
+    const entity = document.getElementById('browseEntity').value;
+    const period = document.getElementById('browsePeriod').value;
+    if (!entity || !period) {
+        alert('请先选择项目和期间');
+        return;
+    }
+
+    if (mode === 'fund') {
+        const url = `/api/download_fund_report?fund=${encodeURIComponent(entity)}&period=${encodeURIComponent(period)}`;
+        window.open(url, '_blank');
+    } else {
+        const url = `/api/download_report?project=${encodeURIComponent(entity)}&period=${encodeURIComponent(period)}`;
+        window.open(url, '_blank');
+    }
+}
+
+async function deleteBrowsePeriod() {
+    const mode = document.getElementById('browseType').value;
+    const entity = document.getElementById('browseEntity').value;
+    const period = document.getElementById('browsePeriod').value;
+    if (!entity || !period) {
+        alert('请先选择项目和期间');
+        return;
+    }
+
+    if (!confirm(`确定要删除 ${entity} ${period} 的所有数据吗？此操作不可恢复。`)) {
+        return;
+    }
+
+    if (mode === 'fund') {
+        const res = await fetch('/api/delete_fund_period', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({fund_name: entity, period: period})
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            alert(`删除成功：${data.records_deleted} 条基金数据`);
+            loadBrowseEntities();
+            document.getElementById('browseDataTable').innerHTML = '';
+            document.getElementById('browseMetricsTable').innerHTML = '';
+            document.getElementById('browseSummaryBox').innerHTML = '';
+        } else {
+            alert('删除失败：' + (data.error || '未知错误'));
+        }
+    } else {
+        await deleteProjectPeriod();
+    }
+}
+
+async function deleteProjectPeriod() {
+    const project = document.getElementById('browseEntity').value;
+    const period = document.getElementById('browsePeriod').value;
+    if (!project || !period) {
+        alert('请先选择项目和期间');
+        return;
+    }
+    if (!confirm(`确定要删除 ${project} ${period} 的所有数据吗？此操作不可恢复。`)) {
+        return;
+    }
+
+    const res = await fetch('/api/delete_project_period', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project_name: project, period: period})
+    });
+    const data = await res.json();
+    if (data.status === 'success') {
+        alert(`删除成功：${data.financial_records_deleted} 条财务数据，${data.metric_records_deleted} 条指标数据`);
+        loadBrowseEntities();
+        document.getElementById('browseDataTable').innerHTML = '';
+        document.getElementById('browseMetricsTable').innerHTML = '';
+        document.getElementById('browseSummaryBox').innerHTML = '';
+    } else {
+        alert('删除失败：' + (data.error || '未知错误'));
+    }
+}
+
+// Initialize UI on load
+updateTemplateUI();
+toggleTemplateMode();
+
+// Load browse entities on tab switch
+document.getElementById('browse-tab').addEventListener('shown.bs.tab', loadBrowseEntities);
+
+// --- Chart Rendering ---
+function renderChart(chartId, chartType, title, xAxis, series) {
+    const dom = document.getElementById(chartId);
+    if (!dom) return;
+
+    const chart = echarts.init(dom);
+    let option;
+
+    if (chartType === 'pie') {
+        const pieData = xAxis.map((label, i) => ({
+            name: label,
+            value: series[0] ? series[0].data[i] || 0 : 0
+        }));
+        option = {
+            title: { text: title, left: 'center', textStyle: { fontSize: 14 } },
+            tooltip: { trigger: 'item', formatter: '{b}: {c}' },
+            series: [{
+                type: 'pie',
+                radius: ['40%', '70%'],
+                data: pieData,
+                emphasis: {
+                    itemStyle: { shadowBlur: 10, shadowOffsetX: 0, shadowColor: 'rgba(0,0,0,0.5)' }
+                },
+                label: { formatter: '{b}\n{c}' }
+            }],
+            toolbox: {
+                feature: {
+                    saveAsImage: { title: '保存图片' }
+                }
+            }
+        };
+    } else {
+        // line or bar
+        const isLine = chartType === 'line';
+        option = {
+            title: { text: title, left: 'center', textStyle: { fontSize: 14 } },
+            tooltip: { trigger: 'axis' },
+            legend: { bottom: 0, data: series.map(s => s.name) },
+            grid: { left: '3%', right: '4%', bottom: '15%', top: '15%', containLabel: true },
+            xAxis: {
+                type: 'category',
+                data: xAxis,
+                axisLabel: { rotate: xAxis.length > 5 ? 30 : 0 }
+            },
+            yAxis: { type: 'value' },
+            series: series.map(s => ({
+                name: s.name,
+                type: isLine ? 'line' : 'bar',
+                data: s.data,
+                smooth: isLine,
+                label: { show: true, position: 'top', fontSize: 11 }
+            })),
+            toolbox: {
+                feature: {
+                    saveAsImage: { title: '保存图片' }
+                }
+            }
+        };
+    }
+
+    chart.setOption(option);
+    window._chartInstances = window._chartInstances || {};
+    window._chartInstances[chartId] = chart;
+}
+
+function switchChartType(chartId, newType) {
+    const data = window._chartData && window._chartData[chartId];
+    if (!data) return;
+
+    // Dispose old instance
+    if (window._chartInstances && window._chartInstances[chartId]) {
+        window._chartInstances[chartId].dispose();
+    }
+
+    renderChart(chartId, newType, data.title, data.xAxis, data.series);
+}
+
+// Resize charts on window resize
+window.addEventListener('resize', () => {
+    if (window._chartInstances) {
+        Object.values(window._chartInstances).forEach(chart => chart.resize());
+    }
+});
+</script>
+</body>
+</html>
