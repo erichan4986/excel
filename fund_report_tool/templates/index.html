@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>基金投后数据自动清洗填表系统</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <link href="/static/vendor/bootstrap-5.3.2/bootstrap.min.css" rel="stylesheet">
+    <script src="/static/vendor/echarts-5.4.3/echarts.min.js"></script>
     <style>
         .tab-content { padding: 20px 0; }
         .result-box { max-height: 400px; overflow-y: auto; }
@@ -45,7 +45,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">上传Excel文件</label>
-                        <input type="file" id="cleanFile" class="form-control" accept=".xlsx,.xls" multiple>
+                        <input type="file" id="cleanFile" class="form-control" accept=".xlsx,.xlsm" multiple>
                     </div>
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" id="templateMode">
@@ -72,7 +72,7 @@
                 <div class="col-md-4">
                     <div class="mb-3">
                         <label class="form-label">上传LP模板</label>
-                        <input type="file" id="chatTemplateFile" class="form-control" accept=".xlsx,.xls">
+                        <input type="file" id="chatTemplateFile" class="form-control" accept=".xlsx,.xlsm">
                     </div>
                     <div class="mb-3">
                         <button class="btn btn-outline-danger btn-sm" id="deleteTemplateBtn" onclick="deleteTemplate()" style="display:none;">删除当前模板</button>
@@ -164,8 +164,18 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/vendor/bootstrap-5.3.2/bootstrap.bundle.min.js"></script>
 <script>
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // --- Tab 1: Data Cleaning ---
 let pendingFiles = [];
 let pendingDataType = '';
@@ -210,7 +220,7 @@ async function startClean(overwrite = false) {
         document.getElementById('cleanProgress').classList.add('d-none');
 
         if (data.status === 'error') {
-            document.getElementById('cleanResult').innerHTML = `<div class="alert alert-danger">预览失败：${data.error}</div>`;
+            document.getElementById('cleanResult').innerHTML = `<div class="alert alert-danger">预览失败：${escapeHtml(data.error)}</div>`;
             document.getElementById('confirmCleanBtn').classList.add('d-none');
             return;
         }
@@ -240,8 +250,8 @@ async function startClean(overwrite = false) {
         for (const r of data.results) {
             if (r.duplicates) {
                 for (const d of r.duplicates) {
-                    const name = d.project_name ? d.project_name + ' ' : '基金 ';
-                    listHtml += `<li>${name} ${d.period}</li>`;
+                    const name = d.project_name ? escapeHtml(d.project_name) + ' ' : '基金 ';
+                    listHtml += `<li>${name} ${escapeHtml(d.period)}</li>`;
                 }
             }
         }
@@ -255,7 +265,7 @@ async function startClean(overwrite = false) {
     if (data.results) {
         html += '<table class="table table-sm"><thead><tr><th>文件名</th><th>状态</th><th>期间</th><th>记录数</th></tr></thead><tbody>';
         for (const r of data.results) {
-            html += `<tr><td>${r.filename}</td><td>${r.status}</td><td>${r.period || '-'}</td><td>${r.records_processed || '-'}</td></tr>`;
+            html += `<tr><td>${escapeHtml(r.filename)}</td><td>${escapeHtml(r.status)}</td><td>${escapeHtml(r.period || '-')}</td><td>${r.records_processed || '-'}</td></tr>`;
         }
         html += '</tbody></table>';
     }
@@ -278,13 +288,13 @@ function showCleanPreview(data) {
     const stats = data.stats;
     const standardNames = data.standard_names || [];
 
-    let html = `<div class="alert alert-info"><b>${data.project_name} ${data.period}</b> — 共 ${stats.total} 个指标：高置信度 <span class="text-success">${stats.auto_confirmed}</span> 个，待确认 <span class="text-warning">${stats.needs_review}</span> 个，未匹配 <span class="text-danger">${stats.unmatched}</span> 个${stats.auto_skip ? '，<span class="text-muted">零值自动跳过 ' + stats.auto_skip + ' 个</span>' : ''}</div>`;
+    let html = `<div class="alert alert-info"><b>${escapeHtml(data.project_name)} ${escapeHtml(data.period)}</b> — 共 ${stats.total} 个指标：高置信度 <span class="text-success">${stats.auto_confirmed}</span> 个，待确认 <span class="text-warning">${stats.needs_review}</span> 个，未匹配 <span class="text-danger">${stats.unmatched}</span> 个${stats.auto_skip ? '，<span class="text-muted">零值自动跳过 ' + stats.auto_skip + ' 个</span>' : ''}</div>`;
 
-    const stdOptions = standardNames.map(s => `<option value="${s}">${s}</option>`).join('');
+    const stdOptions = standardNames.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
 
     for (const [sheetName, items] of Object.entries(preview)) {
         if (!items.length) continue;
-        html += `<h6 class="mt-3">${sheetName}</h6>`;
+        html += `<h6 class="mt-3">${escapeHtml(sheetName)}</h6>`;
         html += '<div style="max-height: 300px; overflow-y: auto;">';
         html += '<table class="table table-sm table-bordered"><thead><tr><th>原始指标名</th><th>匹配标准科目</th><th>置信度</th><th>报表类型</th><th>操作</th></tr></thead><tbody>';
 
@@ -300,18 +310,18 @@ function showCleanPreview(data) {
             if (item.status === 'auto_confirmed') {
                 actionHtml = '<span class="badge bg-success">自动通过</span>';
             } else {
-                actionHtml = `<select class="form-select form-select-sm" onchange="updatePreviewMapping('${item.raw}', this.value)" style="width: 180px; display: inline-block;">
+                actionHtml = `<select class="form-select form-select-sm mapping-select" data-raw="${escapeHtml(item.raw)}" style="width: 180px; display: inline-block;">
                     <option value="">-- 请选择 --</option>
                     <option value="__SKIP__">略过（加入skip_list）</option>
                     ${stdOptions}
                 </select>`;
             }
 
-            html += `<tr class="${rowClass}" data-raw="${item.raw}">
-                <td>${item.raw}</td>
-                <td>${item.standard || '-'}</td>
-                <td>${item.confidence}</td>
-                <td>${item.report_type || '-'}</td>
+            html += `<tr class="${rowClass}" data-raw="${escapeHtml(item.raw)}">
+                <td>${escapeHtml(item.raw)}</td>
+                <td>${escapeHtml(item.standard || '-')}</td>
+                <td>${escapeHtml(item.confidence)}</td>
+                <td>${escapeHtml(item.report_type || '-')}</td>
                 <td>${actionHtml}</td>
             </tr>`;
         }
@@ -320,6 +330,11 @@ function showCleanPreview(data) {
     }
 
     document.getElementById('cleanResult').innerHTML = html;
+    document.querySelectorAll('#cleanResult .mapping-select').forEach(sel => {
+        sel.addEventListener('change', (e) => {
+            updatePreviewMapping(e.target.dataset.raw, e.target.value);
+        });
+    });
 }
 
 function updatePreviewMapping(raw, standard) {
@@ -365,10 +380,10 @@ async function submitCleanConfirm() {
     previewOverrides = {};
 
     let html = `<div class="alert alert-${data.status === 'success' ? 'info' : data.status === 'warning' ? 'warning' : 'danger'}">
-        <b>入库结果：${data.status}</b> — 期间 ${data.period || '-'}，记录数 ${data.records_processed || 0}
+        <b>入库结果：${escapeHtml(data.status)}</b> — 期间 ${escapeHtml(data.period || '-')}，记录数 ${data.records_processed || 0}
     </div>`;
     if (data.warnings && data.warnings.length) {
-        html += '<ul class="text-muted small">' + data.warnings.map(w => `<li>${w}</li>`).join('') + '</ul>';
+        html += '<ul class="text-muted small">' + data.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('') + '</ul>';
     }
     document.getElementById('cleanResult').innerHTML = html;
 }
@@ -391,7 +406,7 @@ async function sendChat() {
         form.append('file', fileInput.files[0]);
         const uploadRes = await fetch('/api/parse_template', {method: 'POST', body: form});
         const uploadData = await uploadRes.json();
-        chatContext.template_path = 'data/uploads/' + fileInput.files[0].name;
+        chatContext.template_path = uploadData.stored_path;
         chatContext.parsed_headers = uploadData;
         updateTemplateUI();
     }
@@ -409,7 +424,7 @@ async function sendChat() {
         if (data.data.success) {
             let infoHtml = '';
             if (data.data.message) {
-                infoHtml = `<div class="alert alert-info mt-2"><small>${data.data.message}</small></div>`;
+                infoHtml = `<div class="alert alert-info mt-2"><small>${escapeHtml(data.data.message)}</small></div>`;
             }
             // Save context for confirm / reject operations
             if (data.data.pending_llm_queue && data.data.pending_llm_queue.length > 0) {
@@ -432,14 +447,14 @@ async function sendChat() {
                 `;
             }
             document.getElementById('chatResult').innerHTML = `
-                <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
-                <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
+                <a href="/download/${encodeURIComponent(data.data.output)}" class="btn btn-outline-primary">下载正式版</a>
+                <a href="/download/${encodeURIComponent(data.data.review)}" class="btn btn-outline-secondary">下载审核版</a>
                 ${infoHtml}
                 ${actionBtns}
             `;
         } else {
             document.getElementById('chatResult').innerHTML = `
-                <div class="alert alert-danger">填表失败：${data.data.error || '未知错误'}</div>
+                <div class="alert alert-danger">填表失败：${escapeHtml(data.data.error || '未知错误')}</div>
             `;
         }
     }
@@ -455,9 +470,9 @@ async function sendChat() {
                 delete chatContext.confirmed_llm_mappings;
                 delete chatContext.rejected_llm_mappings;
                 document.getElementById('chatResult').innerHTML = `
-                    <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
-                    <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
-                    <div class="alert alert-success mt-2">${data.data.message}</div>
+                    <a href="/download/${encodeURIComponent(data.data.output)}" class="btn btn-outline-primary">下载正式版</a>
+                    <a href="/download/${encodeURIComponent(data.data.review)}" class="btn btn-outline-secondary">下载审核版</a>
+                    <div class="alert alert-success mt-2">${escapeHtml(data.data.message)}</div>
                 `;
             } else {
                 let actionBtns = `
@@ -465,14 +480,14 @@ async function sendChat() {
                     <button class="btn btn-outline-danger mt-2" onclick="rejectPendingMappings()">不对</button>
                 `;
                 document.getElementById('chatResult').innerHTML = `
-                    <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
-                    <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
-                    <div class="alert alert-info mt-2"><small>${data.data.message}</small></div>
+                    <a href="/download/${encodeURIComponent(data.data.output)}" class="btn btn-outline-primary">下载正式版</a>
+                    <a href="/download/${encodeURIComponent(data.data.review)}" class="btn btn-outline-secondary">下载审核版</a>
+                    <div class="alert alert-info mt-2"><small>${escapeHtml(data.data.message)}</small></div>
                     ${actionBtns}
                 `;
             }
         } else {
-            document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${data.data.error || '保存失败'}</div>`;
+            document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${escapeHtml(data.data.error || '保存失败')}</div>`;
         }
     }
 
@@ -487,9 +502,9 @@ async function sendChat() {
                 delete chatContext.confirmed_llm_mappings;
                 delete chatContext.rejected_llm_mappings;
                 document.getElementById('chatResult').innerHTML = `
-                    <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
-                    <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
-                    <div class="alert alert-success mt-2">${data.data.message}</div>
+                    <a href="/download/${encodeURIComponent(data.data.output)}" class="btn btn-outline-primary">下载正式版</a>
+                    <a href="/download/${encodeURIComponent(data.data.review)}" class="btn btn-outline-secondary">下载审核版</a>
+                    <div class="alert alert-success mt-2">${escapeHtml(data.data.message)}</div>
                 `;
             } else {
                 let actionBtns = `
@@ -497,40 +512,45 @@ async function sendChat() {
                     <button class="btn btn-outline-danger mt-2" onclick="rejectPendingMappings()">不对</button>
                 `;
                 document.getElementById('chatResult').innerHTML = `
-                    <a href="/download/${data.data.output}" class="btn btn-outline-primary">下载正式版</a>
-                    <a href="/download/${data.data.review}" class="btn btn-outline-secondary">下载审核版</a>
-                    <div class="alert alert-info mt-2"><small>${data.data.message}</small></div>
+                    <a href="/download/${encodeURIComponent(data.data.output)}" class="btn btn-outline-primary">下载正式版</a>
+                    <a href="/download/${encodeURIComponent(data.data.review)}" class="btn btn-outline-secondary">下载审核版</a>
+                    <div class="alert alert-info mt-2"><small>${escapeHtml(data.data.message)}</small></div>
                     ${actionBtns}
                 `;
             }
         } else {
-            document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${data.data.error || '处理失败'}</div>`;
+            document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${escapeHtml(data.data.error || '处理失败')}</div>`;
         }
     }
 
     if (data.intent === 'query_data' && data.data && data.data.success) {
         let html = '<table class="table table-sm"><thead><tr><th>期间</th><th>指标</th><th>数值</th></tr></thead><tbody>';
         for (const row of data.data.data) {
-            html += `<tr><td>${row['期间']}</td><td>${row['指标']}</td><td>${row['数值'] !== null ? row['数值'] : '-'}</td></tr>`;
+            html += `<tr><td>${escapeHtml(row['期间'])}</td><td>${escapeHtml(row['指标'])}</td><td>${row['数值'] !== null ? escapeHtml(row['数值']) : '-'}</td></tr>`;
         }
         html += '</tbody></table>';
         document.getElementById('chatResult').innerHTML = html;
     }
 
     if (data.intent === 'clarify_intent' && data.data) {
-        let html = `<div class="alert alert-info">${data.response}</div>`;
+        let html = `<div class="alert alert-info">${escapeHtml(data.response)}</div>`;
         if (data.data.options && data.data.options.length > 0) {
-            html += '<div class="mt-2">';
+            html += '<div class="mt-2 clarify-options">';
             for (const opt of data.data.options) {
-                html += `<button class="btn btn-outline-primary btn-sm me-2 mb-2" onclick="sendClarifyIntent('${opt.intent}')">${opt.label}</button>`;
+                html += `<button class="btn btn-outline-primary btn-sm me-2 mb-2 clarify-option" data-intent="${escapeHtml(opt.intent)}">${escapeHtml(opt.label)}</button>`;
             }
             html += '</div>';
         }
         document.getElementById('chatResult').innerHTML = html;
+        document.querySelectorAll('#chatResult .clarify-option').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                sendClarifyIntent(e.target.dataset.intent);
+            });
+        });
     }
 
     if (data.intent === 'show_fund_data' && data.data && data.data.success) {
-        let html = `<div class="alert alert-info">${data.data.fund_name} ${data.data.period} 基金数据</div>`;
+        let html = `<div class="alert alert-info">${escapeHtml(data.data.fund_name)} ${escapeHtml(data.data.period)} 基金数据</div>`;
         html += `<div class="row mb-2">`;
         html += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">投资项目数</small><div class="h5 mb-0">${data.data.project_count}</div></div></div></div>`;
         html += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">总成本</small><div class="h5 mb-0">${data.data.total_cost.toLocaleString()}</div></div></div></div>`;
@@ -538,7 +558,7 @@ async function sendChat() {
         html += `</div>`;
         html += '<table class="table table-sm"><thead><tr><th>项目</th><th>剩余投资成本</th><th>项目公允价值</th><th>累计退出回收资金</th><th>备注</th><th>最后回款日期</th></tr></thead><tbody>';
         for (const item of data.data.items) {
-            html += `<tr><td>${item.project_name}</td><td>${item.cost !== null ? item.cost.toLocaleString() : '-'}</td><td>${item.fair_value !== null ? item.fair_value.toLocaleString() : '-'}</td><td>${item.total_return !== null ? item.total_return.toLocaleString() : '-'}</td><td>${item.remark || '-'}</td><td>${item.last_payment_date || '-'}</td></tr>`;
+            html += `<tr><td>${escapeHtml(item.project_name)}</td><td>${item.cost !== null ? item.cost.toLocaleString() : '-'}</td><td>${item.fair_value !== null ? item.fair_value.toLocaleString() : '-'}</td><td>${item.total_return !== null ? item.total_return.toLocaleString() : '-'}</td><td>${escapeHtml(item.remark || '-')}</td><td>${escapeHtml(item.last_payment_date || '-')}</td></tr>`;
         }
         html += '</tbody></table>';
         document.getElementById('chatResult').innerHTML = html;
@@ -576,14 +596,14 @@ async function sendChat() {
     }
 
     if (data.intent === 'draw_chart' && data.data && !data.data.success) {
-        document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${data.data.error || '绘图失败'}</div>`;
+        document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${escapeHtml(data.data.error || '绘图失败')}</div>`;
     }
 
     if (data.intent === 'calculate_metric' && data.data) {
         if (data.data.success) {
-            document.getElementById('chatResult').innerHTML = `<div class="alert alert-info"><pre style="white-space:pre-wrap;margin:0;">${data.data.message}</pre></div>`;
+            document.getElementById('chatResult').innerHTML = `<div class="alert alert-info"><pre style="white-space:pre-wrap;margin:0;">${escapeHtml(data.data.message)}</pre></div>`;
         } else {
-            document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${data.data.error || '计算失败'}</div>`;
+            document.getElementById('chatResult').innerHTML = `<div class="alert alert-warning">${escapeHtml(data.data.error || '计算失败')}</div>`;
         }
     }
 
@@ -594,7 +614,7 @@ async function sendChat() {
 function appendChat(role, text) {
     const box = document.getElementById('chatBox');
     const badge = role === 'user' ? '<span class="badge bg-primary">你</span>' : '<span class="badge bg-secondary">系统</span>';
-    box.innerHTML += `<div class="mb-2">${badge} <span>${text}</span></div>`;
+    box.innerHTML += `<div class="mb-2">${badge} <span>${escapeHtml(text)}</span></div>`;
     box.scrollTop = box.scrollHeight;
 }
 
@@ -662,8 +682,8 @@ function renderMappingList() {
     for (let i = 0; i < allMappings.length; i++) {
         const m = allMappings[i];
         html += `<div class="row mapping-row align-items-center">
-            <div class="col-3"><input class="form-control form-control-sm" value="${m.standard}" onchange="allMappings[${i}].standard=this.value"></div>
-            <div class="col-7"><input class="form-control form-control-sm" value="${(m.aliases || []).join(', ')}" onchange="allMappings[${i}].aliases=this.value.split(',').map(s=>s.trim())"></div>
+            <div class="col-3"><input class="form-control form-control-sm" value="${escapeHtml(m.standard)}" onchange="allMappings[${i}].standard=this.value"></div>
+            <div class="col-7"><input class="form-control form-control-sm" value="${escapeHtml((m.aliases || []).join(', '))}" onchange="allMappings[${i}].aliases=this.value.split(',').map(s=>s.trim())"></div>
             <div class="col-2"><button class="btn btn-sm btn-danger" onclick="allMappings.splice(${i},1);renderMappingList();">删除</button></div>
         </div>`;
     }
@@ -726,7 +746,7 @@ async function loadBrowseEntities() {
     if (mode === 'fund') {
         const res = await fetch('/api/funds');
         const data = await res.json();
-        sel.innerHTML += data.funds.map(f => `<option value="${f}">${f}</option>`).join('');
+        sel.innerHTML += data.funds.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f)}</option>`).join('');
     } else {
         await loadProjects();
     }
@@ -742,7 +762,7 @@ async function loadEntityPeriods() {
     if (mode === 'fund') {
         const res = await fetch(`/api/fund_periods?fund=${encodeURIComponent(entity)}`);
         const data = await res.json();
-        sel.innerHTML += data.periods.map(p => `<option value="${p}">${p}</option>`).join('');
+        sel.innerHTML += data.periods.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
     } else {
         await loadPeriods();
     }
@@ -793,12 +813,12 @@ async function loadFundData() {
     let html = '<table class="table table-sm"><thead><tr><th>项目</th><th>剩余投资成本</th><th>项目公允价值</th><th>累计退出回收资金</th><th>备注</th><th>最后回款日期</th></tr></thead><tbody>';
     for (const item of data.items) {
         html += `<tr>
-            <td>${item.project_name}</td>
+            <td>${escapeHtml(item.project_name)}</td>
             <td>${item.cost !== null ? item.cost.toLocaleString() : '-'}</td>
             <td>${item.fair_value !== null ? item.fair_value.toLocaleString() : '-'}</td>
             <td>${item.total_return !== null ? item.total_return.toLocaleString() : '-'}</td>
-            <td>${item.remark || '-'}</td>
-            <td>${item.last_payment_date || '-'}</td>
+            <td>${escapeHtml(item.remark || '-')}</td>
+            <td>${escapeHtml(item.last_payment_date || '-')}</td>
         </tr>`;
     }
     html += '</tbody></table>';
@@ -833,14 +853,14 @@ async function loadProjectData() {
 
     let html = '<table class="table table-sm"><thead><tr><th>报表类型</th><th>指标</th><th>数值</th></tr></thead><tbody>';
     for (const item of data.items) {
-        html += `<tr><td>${item.report_type}</td><td>${item.item_name}</td><td>${item.value !== null ? item.value : '-'}</td></tr>`;
+        html += `<tr><td>${escapeHtml(item.report_type)}</td><td>${escapeHtml(item.item_name)}</td><td>${item.value !== null ? escapeHtml(item.value) : '-'}</td></tr>`;
     }
     html += '</tbody></table>';
     document.getElementById('browseDataTable').innerHTML = html;
 
     let mhtml = '<table class="table table-sm"><thead><tr><th>指标</th><th>数值</th></tr></thead><tbody>';
     for (const m of metrics.metrics) {
-        mhtml += `<tr><td>${m.metric_name}</td><td>${m.metric_value !== null ? m.metric_value.toFixed(4) : '-'}</td></tr>`;
+        mhtml += `<tr><td>${escapeHtml(m.metric_name)}</td><td>${m.metric_value !== null ? escapeHtml(m.metric_value.toFixed(4)) : '-'}</td></tr>`;
     }
     mhtml += '</tbody></table>';
     document.getElementById('browseMetricsTable').innerHTML = mhtml;
@@ -851,7 +871,7 @@ async function loadProjects() {
     const data = await res.json();
     const sel = document.getElementById('browseEntity');
     sel.innerHTML = '<option value="">-- 请选择 --</option>' +
-        data.projects.map(p => `<option value="${p}">${p}</option>`).join('');
+        data.projects.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
     document.getElementById('browsePeriod').innerHTML = '<option value="">-- 请选择 --</option>';
     document.getElementById('browseDataTable').innerHTML = '';
     document.getElementById('browseMetricsTable').innerHTML = '';
@@ -865,7 +885,7 @@ async function loadPeriods() {
     const data = await res.json();
     const sel = document.getElementById('browsePeriod');
     sel.innerHTML = '<option value="">-- 请选择 --</option>' +
-        data.periods.map(p => `<option value="${p}">${p}</option>`).join('');
+        data.periods.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
 }
 
 async function downloadBrowseReport() {
