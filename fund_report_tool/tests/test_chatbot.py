@@ -22,7 +22,7 @@ def test_parse_intent_fill_template():
         "intent": "fill_template",
         "params": {
             "template_path": "test.xlsx",
-            "layout": {"company_axis": "col", "metric_axis": "row"},
+            "layout": {"company_axis": "row", "metric_axis": "col"},
             "period": "2024-12-31"
         },
         "response": "已理解"
@@ -30,7 +30,8 @@ def test_parse_intent_fill_template():
     with patch("core.chatbot.llm_helper.generate", return_value=mock_content):
         result = chatbot.process_message("公司名在第一列，指标在第一行，填2024年的数据")
         assert result["intent"] == "fill_template"
-        assert result["params"]["layout"]["company_axis"] == "col"
+        assert result["params"]["layout"]["company_axis"] == "row"
+        assert result["params"]["layout"]["metric_axis"] == "col"
 
 
 def test_parse_intent_query_data():

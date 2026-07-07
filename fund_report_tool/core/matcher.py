@@ -1,13 +1,7 @@
 import os
 import difflib
-import yaml
 from core import llm_helper
-from core.paths import CONFIG_PATH
-
-
-def load_config():
-    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
+from core.config import load_config
 
 
 def get_mappings():

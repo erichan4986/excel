@@ -1,6 +1,5 @@
 import os
 import re
-import yaml
 from pathlib import Path
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
@@ -8,7 +7,8 @@ from openpyxl.comments import Comment
 from datetime import datetime
 from core.database import get_session, ProjectFinancial, FundFinancial
 from core import matcher
-from core.paths import OUTPUT_DIR, CONFIG_PATH
+from core.paths import OUTPUT_DIR
+from core.config import load_config
 
 
 def _get_writable_cell(ws, row, col):
@@ -55,11 +55,6 @@ def _is_likely_company_name(name):
     if name.startswith("第") and len(name) <= 4 and name[-1] in ("列", "行", "章", "节"):
         return False
     return True
-
-
-def load_config():
-    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
 
 
 def detect_period_in_template(ws):
@@ -569,10 +564,10 @@ def _fill_legacy(ws, wb, template_path, mapping_overrides, period, db_path, use_
                 cell.comment = comment
 
         base_name = os.path.splitext(os.path.basename(template_path))[0]
-        output_path = f"data/outputs/{base_name}_filled.xlsx"
-        review_path = f"data/outputs/{base_name}_review.xlsx"
-        wb.save(output_path)
-        wb.save(review_path)
+        output_path = OUTPUT_DIR / f"{base_name}_filled.xlsx"
+        review_path = OUTPUT_DIR / f"{base_name}_review.xlsx"
+        wb.save(str(output_path))
+        wb.save(str(review_path))
         stats = {
             "companies_found": 0,
             "metrics_found": len(matched),
@@ -581,6 +576,6 @@ def _fill_legacy(ws, wb, template_path, mapping_overrides, period, db_path, use_
             "company_names": [],
             "metric_names": sorted(set(matched.values())),
         }
-        return output_path, review_path, stats
+        return str(output_path), str(review_path), stats
     finally:
         session.close()

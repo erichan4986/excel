@@ -4,9 +4,9 @@ from pathlib import Path
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
-import yaml
 
-from core.paths import CONFIG_PATH
+from core.paths import CONFIG_PATH, PROJECT_ROOT
+from core.config import load_config
 
 Base = declarative_base()
 
@@ -79,16 +79,23 @@ class FundFairValue(Base):
     uploaded_at = Column(DateTime, default=datetime.now)
 
 
-def load_config():
-    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
+class UploadRecord(Base):
+    __tablename__ = 'upload_records'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    original_name = Column(String(255), nullable=False)
+    stored_name = Column(String(255), nullable=False, unique=True)
+    stored_path = Column(String(500))
+    uploaded_at = Column(DateTime, default=datetime.now)
 
 
 def get_engine(db_path=None):
     if db_path is None:
         config = load_config()
         db_path = config['database']['path']
-    os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else '.', exist_ok=True)
+    db_path = Path(db_path)
+    if not db_path.is_absolute():
+        db_path = PROJECT_ROOT / db_path
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     return create_engine(f'sqlite:///{db_path}', echo=False)
 
 

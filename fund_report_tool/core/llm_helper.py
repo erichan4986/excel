@@ -1,14 +1,8 @@
 import json
 import os
-import yaml
 from openai import OpenAI, APIError, APITimeoutError
 
-from core.paths import CONFIG_PATH
-
-
-def load_config():
-    with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-        return yaml.safe_load(f)
+from core.config import load_config
 
 
 def get_llm_client():
@@ -18,9 +12,12 @@ def get_llm_client():
         return None
     # Prefer env var to avoid storing secrets in config files
     api_key = os.environ.get('DEEPSEEK_API_KEY', '') or llm_config.get('api_key', '')
-    if api_key in ('', 'your-api-key', 'sk-你的key', 'sk-your-key'):
-        return None
     base_url = llm_config.get('api_base', 'https://api.deepseek.com/v1')
+    is_local = any(h in base_url for h in ('localhost', '127.0.0.1', '::1'))
+    if api_key in ('', 'your-api-key', 'sk-你的key', 'sk-your-key'):
+        if not is_local:
+            return None
+        api_key = 'local'
     return OpenAI(api_key=api_key, base_url=base_url)
 
 

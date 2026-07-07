@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional
 import pandas as pd
 from core import llm_helper
-from core.matcher import load_config
+from core.config import load_config
 from core.paths import PROJECT_ROOT, TEMPLATES_DIR
 
 # Section boundaries (0-based DataFrame index)
