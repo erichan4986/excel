@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 from typing import List, Optional
+from datetime import datetime
+from uuid import uuid4
 from dotenv import load_dotenv
 load_dotenv()
 import shutil
@@ -13,11 +15,12 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy import func
 
-from core.database import init_db, get_session, ProjectFinancial, ProjectMetric, FundFairValue
+from core.database import init_db, get_session, ProjectFinancial, ProjectMetric, FundFairValue, UploadRecord
 from core import cleaner
 from core.cleaner import clean_and_store
 from core.filler import fill_template
 from core.matcher import match_header, batch_match, get_mappings
+from core.config import load_config
 from core.llm_helper import generate_mapping_suggestion
 from core.pdf_processor import extract_tables
 from core import chatbot
@@ -36,6 +39,41 @@ def _sanitize_filename(filename: Optional[str]) -> str:
     if not name or name in (".", ".."):
         return "unnamed"
     return name
+
+
+def _is_safe_path(base_dir: Path, target_path: Path) -> bool:
+    """Check that target_path is inside base_dir (after resolving symlinks)."""
+    try:
+        target_path.resolve().relative_to(base_dir.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _save_upload(file: UploadFile) -> tuple[str, str, Path]:
+    """Save an uploaded file with a unique stored name. Returns (original_name, stored_name, file_path)."""
+    original_name = _sanitize_filename(file.filename)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    unique = str(uuid4())[:8]
+    stored_name = f"{timestamp}_{unique}_{original_name}"
+    file_path = UPLOAD_DIR / stored_name
+    with open(file_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return original_name, stored_name, file_path
+
+
+def _record_upload(original_name: str, stored_name: str, stored_path: Path):
+    """Record upload metadata in the database."""
+    session = get_session()
+    try:
+        session.add(UploadRecord(
+            original_name=original_name,
+            stored_name=stored_name,
+            stored_path=str(stored_path)
+        ))
+        session.commit()
+    finally:
+        session.close()
 
 
 app = FastAPI(title="基金投后数据自动清洗填表系统")
@@ -62,12 +100,13 @@ async def api_clean(file: UploadFile = File(...), data_type: str = Form(...), ov
     if data_type not in ('project', 'fund'):
         return JSONResponse({"error": "Invalid data_type, must be 'project' or 'fund'"}, status_code=400)
 
-    safe_name = _sanitize_filename(file.filename)
-    file_path = UPLOAD_DIR / safe_name
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    original_name, stored_name, file_path = _save_upload(file)
+    _record_upload(original_name, stored_name, file_path)
 
     result = clean_and_store(str(file_path), data_type, overwrite=overwrite)
+    result['original_name'] = original_name
+    result['stored_name'] = stored_name
+    result['stored_path'] = str(file_path)
     return JSONResponse(result)
 
 
@@ -78,12 +117,12 @@ async def api_clean_batch(files: List[UploadFile] = File(...), data_type: str = 
 
     results = []
     for file in files:
-        safe_name = _sanitize_filename(file.filename)
-        file_path = UPLOAD_DIR / safe_name
-        with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
+        original_name, stored_name, file_path = _save_upload(file)
+        _record_upload(original_name, stored_name, file_path)
         result = clean_and_store(str(file_path), data_type, overwrite=overwrite)
-        result["filename"] = file.filename
+        result["filename"] = original_name
+        result["stored_name"] = stored_name
+        result["stored_path"] = str(file_path)
         results.append(result)
 
     success_count = sum(1 for r in results if r["status"] == "success")
@@ -115,10 +154,8 @@ async def api_clean_batch(files: List[UploadFile] = File(...), data_type: str = 
 @app.post("/api/parse_template")
 async def api_parse_template(file: UploadFile = File(...)):
     from openpyxl import load_workbook
-    safe_name = _sanitize_filename(file.filename)
-    file_path = UPLOAD_DIR / safe_name
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    original_name, stored_name, file_path = _save_upload(file)
+    _record_upload(original_name, stored_name, file_path)
 
     try:
         wb = load_workbook(str(file_path), data_only=True)
@@ -141,7 +178,14 @@ async def api_parse_template(file: UploadFile = File(...)):
             else:
                 missing.append(h)
 
-        return JSONResponse({"headers": headers, "matched": matched, "missing": missing})
+        return JSONResponse({
+            "headers": headers,
+            "matched": matched,
+            "missing": missing,
+            "original_name": original_name,
+            "stored_name": stored_name,
+            "stored_path": str(file_path)
+        })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
@@ -149,16 +193,17 @@ async def api_parse_template(file: UploadFile = File(...)):
 @app.post("/api/fill")
 async def api_fill(file: UploadFile = File(...), mapping_overrides: str = Form("{}")):
     overrides = json.loads(mapping_overrides) if mapping_overrides else {}
-    safe_name = _sanitize_filename(file.filename)
-    file_path = UPLOAD_DIR / safe_name
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    original_name, stored_name, file_path = _save_upload(file)
+    _record_upload(original_name, stored_name, file_path)
 
     try:
         output_path, review_path = fill_template(str(file_path), overrides)
         return JSONResponse({
             "output": os.path.basename(output_path),
-            "review": os.path.basename(review_path)
+            "review": os.path.basename(review_path),
+            "original_name": original_name,
+            "stored_name": stored_name,
+            "stored_path": str(file_path)
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -166,13 +211,13 @@ async def api_fill(file: UploadFile = File(...), mapping_overrides: str = Form("
 
 @app.get("/download/{filename}")
 async def download(filename: str):
-    base_dir = OUTPUT_DIR.resolve()
-    file_path = (OUTPUT_DIR / filename).resolve()
-    if not str(file_path).startswith(str(base_dir)) and file_path != base_dir:
+    safe_name = _sanitize_filename(filename)
+    file_path = (OUTPUT_DIR / safe_name).resolve()
+    if not _is_safe_path(OUTPUT_DIR, file_path):
         raise HTTPException(status_code=403, detail="Access denied")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(str(file_path), filename=filename)
+    return FileResponse(str(file_path), filename=safe_name)
 
 
 @app.post("/api/smart-match")
@@ -403,16 +448,17 @@ async def api_download_fund_report(fund: str, period: str):
 
 @app.post("/api/parse_pdf")
 async def api_parse_pdf(file: UploadFile = File(...)):
-    safe_name = _sanitize_filename(file.filename)
-    file_path = UPLOAD_DIR / safe_name
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    original_name, stored_name, file_path = _save_upload(file)
+    _record_upload(original_name, stored_name, file_path)
 
     try:
         tables = extract_tables(str(file_path))
         return JSONResponse({
             "tables_count": len(tables),
-            "tables": [t.head(10).to_dict(orient='records') for t in tables]
+            "tables": [t.head(10).to_dict(orient='records') for t in tables],
+            "original_name": original_name,
+            "stored_name": stored_name,
+            "stored_path": str(file_path)
         })
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -423,9 +469,8 @@ async def api_delete_template(request: Request):
     body = await request.json()
     template_path = body.get("template_path", "")
 
-    base_dir = UPLOAD_DIR.resolve()
     file_path = Path(template_path).resolve()
-    if not str(file_path).startswith(str(base_dir)) and file_path != base_dir:
+    if not _is_safe_path(UPLOAD_DIR, file_path):
         return JSONResponse({"error": "Access denied"}, status_code=403)
     if not file_path.exists():
         return JSONResponse({"error": "File not found"}, status_code=404)
@@ -552,12 +597,13 @@ async def api_clean_preview(file: UploadFile = File(...), data_type: str = Form(
     if data_type not in ('project', 'fund'):
         return JSONResponse({"error": "Invalid data_type, must be 'project' or 'fund'"}, status_code=400)
 
-    safe_name = _sanitize_filename(file.filename)
-    file_path = UPLOAD_DIR / safe_name
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    original_name, stored_name, file_path = _save_upload(file)
+    _record_upload(original_name, stored_name, file_path)
 
     result = cleaner.preview_clean(str(file_path), data_type)
+    result['original_name'] = original_name
+    result['stored_name'] = stored_name
+    result['stored_path'] = str(file_path)
     return JSONResponse(result)
 
 
@@ -569,10 +615,8 @@ async def api_clean_confirm(file: UploadFile = File(...), data_type: str = Form(
 
     confirmed = json.loads(confirmed_mappings) if confirmed_mappings else {}
 
-    safe_name = _sanitize_filename(file.filename)
-    file_path = UPLOAD_DIR / safe_name
-    with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    original_name, stored_name, file_path = _save_upload(file)
+    _record_upload(original_name, stored_name, file_path)
 
     # Persist confirmed mappings to config.yaml and skip_list
     config = load_config()
@@ -602,6 +646,9 @@ async def api_clean_confirm(file: UploadFile = File(...), data_type: str = Form(
         yaml.dump(config, f, allow_unicode=True, sort_keys=False)
 
     result = cleaner.clean_and_store(str(file_path), data_type, overwrite=overwrite, confirmed_mappings=confirmed)
+    result['original_name'] = original_name
+    result['stored_name'] = stored_name
+    result['stored_path'] = str(file_path)
     return JSONResponse(result)
 
 
