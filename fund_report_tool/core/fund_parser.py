@@ -1,10 +1,17 @@
 import os
 import re
 import pandas as pd
+from dataclasses import dataclass
 from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
 from core.database import get_session, FundFairValue
+
+
+@dataclass
+class ParsedValue:
+    value: Optional[float] = None
+    status: str = 'ok'  # 'ok' | 'missing' | 'invalid'
 
 # Header keyword mappings: canonical_name -> list of detection keywords
 _HEADER_KEYWORDS = {
@@ -53,22 +60,25 @@ def _identify_headers(row_values: List) -> Dict[str, int]:
     return result
 
 
-def _normalize_value(val):
-    """Convert various number formats to float."""
+def _normalize_value(val) -> ParsedValue:
+    """Convert various number formats to float, distinguishing missing/invalid."""
     if pd.isna(val):
-        return 0.0
+        return ParsedValue(None, 'missing')
     if isinstance(val, (int, float)):
-        return float(val)
+        return ParsedValue(float(val), 'ok')
     if isinstance(val, str):
-        val = val.strip().replace(',', '')
-        val = val.replace('（', '(').replace('）', ')')
-        if val.startswith('(') and val.endswith(')'):
-            val = '-' + val[1:-1]
+        s = val.strip()
+        if not s or s.upper() in ('N/A', 'NA', '无', '未提供', '-', '—', 'NONE', '待确认'):
+            return ParsedValue(None, 'missing')
+        s = s.replace('（', '(').replace('）', ')')
+        if s.startswith('(') and s.endswith(')'):
+            s = '-' + s[1:-1]
+        s = s.replace(',', '')
         try:
-            return float(val)
+            return ParsedValue(float(s), 'ok')
         except ValueError:
-            return 0.0
-    return 0.0
+            return ParsedValue(None, 'invalid')
+    return ParsedValue(None, 'invalid')
 
 
 def _parse_date(val) -> Optional[str]:
@@ -84,20 +94,21 @@ def _parse_date(val) -> Optional[str]:
     return None
 
 
-def parse_fund_fair_value(file_path: str) -> Tuple[Optional[str], List[Dict]]:
+def parse_fund_fair_value(file_path: str) -> Tuple[Optional[str], List[Dict], List[str]]:
     """
     Parse a multi-sheet fund fair value Excel file.
 
     Returns:
-        (period, list of record dicts)
+        (period, list of record dicts, warnings)
         Each record: {fund_name, project_name, period, cost, fair_value, total_return, remark, last_payment_date}
     """
     period = _detect_period_from_filename(file_path)
     if not period:
-        period = datetime.now().strftime('%Y-%m-%d')
+        return None, [], []
 
     xl = pd.ExcelFile(file_path)
     all_records = []
+    warnings = []
 
     for sheet_name in xl.sheet_names:
         df = pd.read_excel(file_path, sheet_name=sheet_name, header=None)
@@ -127,20 +138,31 @@ def parse_fund_fair_value(file_path: str) -> Tuple[Optional[str], List[Dict]]:
             if not project_name or '合计' in project_name or project_name in ('nan', 'None', ''):
                 continue
 
+            cost_pv = _normalize_value(row.iloc[col_map.get('cost', 1)]) if 'cost' in col_map else ParsedValue(0.0, 'ok')
+            fair_value_pv = _normalize_value(row.iloc[col_map.get('fair_value', 2)]) if 'fair_value' in col_map else ParsedValue(0.0, 'ok')
+            total_return_pv = _normalize_value(row.iloc[col_map.get('total_return', 3)]) if 'total_return' in col_map else ParsedValue(0.0, 'ok')
+
+            if cost_pv.status == 'invalid':
+                warnings.append(f"{project_name} 成本无法解析: {row.iloc[col_map.get('cost', 1)]}")
+            if fair_value_pv.status == 'invalid':
+                warnings.append(f"{project_name} 公允价值无法解析: {row.iloc[col_map.get('fair_value', 2)]}")
+            if total_return_pv.status == 'invalid':
+                warnings.append(f"{project_name} 累计退出无法解析: {row.iloc[col_map.get('total_return', 3)]}")
+
             record = {
                 'fund_name': str(sheet_name).strip(),
                 'project_name': project_name,
                 'period': period,
-                'cost': _normalize_value(row.iloc[col_map.get('cost', 1)]) if 'cost' in col_map else 0.0,
-                'fair_value': _normalize_value(row.iloc[col_map.get('fair_value', 2)]) if 'fair_value' in col_map else 0.0,
-                'total_return': _normalize_value(row.iloc[col_map.get('total_return', 3)]) if 'total_return' in col_map else 0.0,
+                'cost': cost_pv.value,
+                'fair_value': fair_value_pv.value,
+                'total_return': total_return_pv.value,
                 'remark': str(row.iloc[col_map.get('remark', 4)]).strip() if col_map.get('remark') and pd.notna(row.iloc[col_map.get('remark')]) else None,
                 'last_payment_date': _parse_date(row.iloc[col_map.get('last_payment_date', 5)]) if col_map.get('last_payment_date') else None,
                 'source_file': os.path.basename(file_path),
             }
             all_records.append(record)
 
-    return period, all_records
+    return period, all_records, warnings
 
 
 def store_fund_records(records: List[Dict], overwrite: bool = False):
@@ -155,6 +177,23 @@ def store_fund_records(records: List[Dict], overwrite: bool = False):
         for r in records:
             key = (r['fund_name'], r['period'])
             groups.setdefault(key, []).append(r)
+
+        # Check for existing records when overwrite is False
+        duplicates = []
+        if not overwrite:
+            for (fund_name, period) in groups:
+                existing = session.query(FundFairValue).filter_by(
+                    fund_name=fund_name, period=period
+                ).first()
+                if existing:
+                    duplicates.append({'fund_name': fund_name, 'period': period})
+
+        if duplicates:
+            return {
+                'status': 'confirm',
+                'duplicates': duplicates,
+                'message': '以下基金期间已存在，确认覆盖？'
+            }
 
         stored = 0
         for (fund_name, period), group_records in groups.items():
@@ -183,7 +222,9 @@ def store_fund_records(records: List[Dict], overwrite: bool = False):
 
 def preview_fund_fair_value(file_path: str) -> Dict:
     """Preview parsed fund data without storing."""
-    period, records = parse_fund_fair_value(file_path)
+    period, records, warnings = parse_fund_fair_value(file_path)
+    if period is None:
+        return {'status': 'confirm', 'error': '无法从文件名识别基金期间，请确认或手动指定'}
     if not records:
         return {'status': 'error', 'error': '未能解析到任何基金数据'}
 

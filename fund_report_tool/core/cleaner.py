@@ -2,6 +2,8 @@ import os
 import re
 import json
 import pandas as pd
+from dataclasses import dataclass
+from typing import Optional
 from datetime import datetime
 from core.database import (
     get_session, ProjectFinancial, FundFinancial,
@@ -13,29 +15,37 @@ from core import fund_parser
 from core.paths import CLEANED_DIR
 
 
-def normalize_value(val):
-    """Convert various number formats to float."""
+@dataclass
+class ParsedValue:
+    value: Optional[float] = None
+    status: str = 'ok'  # 'ok' | 'missing' | 'invalid'
+
+
+def normalize_value(val) -> ParsedValue:
+    """Convert various number formats to float, distinguishing missing/invalid."""
     if pd.isna(val):
-        return 0.0
+        return ParsedValue(None, 'missing')
     if isinstance(val, (int, float)):
-        return float(val)
+        return ParsedValue(float(val), 'ok')
     if isinstance(val, str):
-        val = val.strip()
-        val = val.replace('（', '(').replace('）', ')')
-        if val.startswith('(') and val.endswith(')'):
-            val = '-' + val[1:-1]
-        val = val.replace(',', '')
-        if val.endswith('%'):
-            val = val[:-1]
+        s = val.strip()
+        if not s or s.upper() in ('N/A', 'NA', '无', '未提供', '-', '—', 'NONE', '待确认'):
+            return ParsedValue(None, 'missing')
+        s = s.replace('（', '(').replace('）', ')')
+        if s.startswith('(') and s.endswith(')'):
+            s = '-' + s[1:-1]
+        s = s.replace(',', '')
+        if s.endswith('%'):
+            s = s[:-1]
             try:
-                return float(val) / 100
+                return ParsedValue(float(s) / 100, 'ok')
             except ValueError:
-                return 0.0
+                return ParsedValue(None, 'invalid')
         try:
-            return float(val)
+            return ParsedValue(float(s), 'ok')
         except ValueError:
-            return 0.0
-    return 0.0
+            return ParsedValue(None, 'invalid')
+    return ParsedValue(None, 'invalid')
 
 
 def detect_period(df, file_path):
@@ -196,31 +206,31 @@ def try_parse_complex_sheet(xl, sheet_name):
 
         def read_item(row, icol, vcol):
             if icol is None or icol >= len(row):
-                return None, 0
+                return None, 0, 'missing'
             raw_item = str(row.iloc[icol]).strip() if pd.notna(row.iloc[icol]) else ''
             if not raw_item or raw_item.lower() in ['nan', 'none', '']:
-                return None, 0
+                return None, 0, 'missing'
             if raw_item.startswith('单位名称:') or '会企' in raw_item:
-                return None, 0
+                return None, 0, 'missing'
             if re.match(r'^[\s.]*$', raw_item):
-                return None, 0
+                return None, 0, 'missing'
             raw_value = row.iloc[vcol] if vcol is not None and vcol < len(row) and pd.notna(row.iloc[vcol]) else 0
-            value = normalize_value(raw_value)
-            return raw_item, value
+            pv = normalize_value(raw_value)
+            return raw_item, pv.value, pv.status
 
         for idx in range(header_idx + 1, end_idx):
             row = df.iloc[idx]
             if row.isna().all():
                 continue
 
-            raw_item, value = read_item(row, item_col, value_col)
+            raw_item, value, value_status = read_item(row, item_col, value_col)
             if raw_item:
-                items.append({'raw_item': raw_item, 'value': value, 'report_type': report_type})
+                items.append({'raw_item': raw_item, 'value': value, 'value_status': value_status, 'report_type': report_type})
 
             if right_item_col is not None:
-                raw_item, value = read_item(row, right_item_col, right_value_col)
+                raw_item, value, value_status = read_item(row, right_item_col, right_value_col)
                 if raw_item:
-                    items.append({'raw_item': raw_item, 'value': value, 'report_type': report_type})
+                    items.append({'raw_item': raw_item, 'value': value, 'value_status': value_status, 'report_type': report_type})
 
     return items if items else None
 
@@ -276,8 +286,12 @@ def preview_clean(file_path, data_type):
             for item in complex_items:
                 standard_name, confidence, _ = template_matcher.match_to_template(item['raw_item'], use_llm=True)
                 status = template_matcher.classify_match(confidence)
-                # Auto-skip zero-value items that aren't high-confidence matches
-                if status != 'auto_confirmed' and item['value'] == 0.0:
+                value_status = item.get('value_status', 'ok')
+                # Invalid values always need review
+                if value_status == 'invalid':
+                    status = 'needs_review'
+                # Auto-skip missing/zero-value items that aren't high-confidence matches
+                elif status != 'auto_confirmed' and (value_status == 'missing' or item['value'] == 0.0):
                     status = 'auto_skip'
                 sheet_preview.append({
                     "raw": item['raw_item'],
@@ -286,6 +300,7 @@ def preview_clean(file_path, data_type):
                     "report_type": item['report_type'],
                     "status": status,
                     "value": item['value'],
+                    "value_status": value_status,
                 })
                 stats["total"] += 1
                 stats[status] += 1
@@ -321,13 +336,17 @@ def preview_clean(file_path, data_type):
                 continue
 
             raw_value = row.get(value_col, 0) if value_col else 0
-            value = normalize_value(raw_value)
+            pv = normalize_value(raw_value)
+            value = pv.value
 
             standard_name, confidence, report_type = template_matcher.match_to_template(raw_item, use_llm=True)
             status = template_matcher.classify_match(confidence)
 
-            # Auto-skip zero-value items that aren't high-confidence matches
-            if status != 'auto_confirmed' and value == 0.0:
+            # Invalid values always need review
+            if pv.status == 'invalid':
+                status = 'needs_review'
+            # Auto-skip missing/zero-value items that aren't high-confidence matches
+            elif status != 'auto_confirmed' and (pv.status == 'missing' or value == 0.0):
                 status = 'auto_skip'
 
             sheet_preview.append({
@@ -337,6 +356,7 @@ def preview_clean(file_path, data_type):
                 "report_type": report_type,
                 "status": status,
                 "value": value,
+                "value_status": pv.status,
             })
 
             stats["total"] += 1
@@ -357,13 +377,21 @@ def preview_clean(file_path, data_type):
 def clean_and_store(file_path, data_type, db_path=None, overwrite=False, confirmed_mappings=None):
     """Main cleaning function. If confirmed_mappings is provided, only keep mapped items."""
     if data_type == 'fund':
-        _, records = fund_parser.parse_fund_fair_value(file_path)
+        period, records, warnings = fund_parser.parse_fund_fair_value(file_path)
+        if period is None:
+            return {
+                "status": "confirm",
+                "error": "无法从文件名识别基金期间，请确认或手动指定",
+                "duplicates": []
+            }
         if not records:
             return {"status": "error", "error": "未能解析到基金数据"}
-        # Fund data is always overwritten by period (same-period updates replace old data)
-        result = fund_parser.store_fund_records(records, overwrite=True)
+        result = fund_parser.store_fund_records(records, overwrite=overwrite)
         result['period'] = records[0]['period'] if records else None
         result['records_processed'] = len(records)
+        result['warnings'] = warnings
+        if warnings and result.get('status') == 'success':
+            result['status'] = 'warning'
         return result
 
     warnings_list = []
@@ -460,7 +488,12 @@ def clean_and_store(file_path, data_type, db_path=None, overwrite=False, confirm
                 for item in complex_items:
                     raw_item = item['raw_item']
                     value = item['value']
+                    value_status = item.get('value_status', 'ok')
                     report_type = item['report_type']
+
+                    if value_status == 'invalid':
+                        warnings_list.append(f"'{raw_item}' 数值无法解析: {item.get('raw_value', value)}")
+                        continue
 
                     if confirmed_mappings is not None:
                         std_from_template, confidence, tmpl_report_type = template_matcher.match_to_template(raw_item, use_llm=True)
@@ -528,7 +561,12 @@ def clean_and_store(file_path, data_type, db_path=None, overwrite=False, confirm
                     continue
 
                 raw_value = row.get(value_col, 0) if value_col else 0
-                value = normalize_value(raw_value)
+                pv = normalize_value(raw_value)
+                value = pv.value
+
+                if pv.status == 'invalid':
+                    warnings_list.append(f"'{raw_item}' 数值无法解析: {raw_value}")
+                    continue
 
                 # Template mode: use confirmed_mappings to filter and map
                 if confirmed_mappings is not None:
@@ -574,11 +612,10 @@ def clean_and_store(file_path, data_type, db_path=None, overwrite=False, confirm
             total_records += records_count
 
             # Save CSV snapshot per sheet
-            snapshot_dir = "data/cleaned"
-            os.makedirs(snapshot_dir, exist_ok=True)
+            CLEANED_DIR.mkdir(parents=True, exist_ok=True)
             snapshot_name = f"{os.path.basename(file_path)}_{sheet_name}_{period}_cleaned.csv"
-            snapshot_path = os.path.join(snapshot_dir, snapshot_name)
-            df.to_csv(snapshot_path, index=False, encoding='utf-8-sig')
+            snapshot_path = CLEANED_DIR / snapshot_name
+            df.to_csv(str(snapshot_path), index=False, encoding='utf-8-sig')
 
         # Aggregate merge: sum values when multiple raw items map to the same standard name
         from sqlalchemy import func
