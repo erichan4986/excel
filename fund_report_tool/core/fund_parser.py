@@ -94,7 +94,7 @@ def _parse_date(val) -> Optional[str]:
     return None
 
 
-def parse_fund_fair_value(file_path: str) -> Tuple[Optional[str], List[Dict], List[str]]:
+def parse_fund_fair_value(file_path: str, original_filename: Optional[str] = None, period_override: Optional[str] = None):
     """
     Parse a multi-sheet fund fair value Excel file.
 
@@ -102,7 +102,11 @@ def parse_fund_fair_value(file_path: str) -> Tuple[Optional[str], List[Dict], Li
         (period, list of record dicts, warnings)
         Each record: {fund_name, project_name, period, cost, fair_value, total_return, remark, last_payment_date}
     """
-    period = _detect_period_from_filename(file_path)
+    period = period_override
+    if not period:
+        period = _detect_period_from_filename(original_filename) if original_filename else None
+    if not period:
+        period = _detect_period_from_filename(file_path)
     if not period:
         return None, [], []
 
@@ -220,9 +224,11 @@ def store_fund_records(records: List[Dict], overwrite: bool = False):
         session.close()
 
 
-def preview_fund_fair_value(file_path: str) -> Dict:
+def preview_fund_fair_value(file_path: str, original_filename: Optional[str] = None, period_override: Optional[str] = None) -> Dict:
     """Preview parsed fund data without storing."""
-    period, records, warnings = parse_fund_fair_value(file_path)
+    period, records, warnings = parse_fund_fair_value(
+        file_path, original_filename=original_filename, period_override=period_override
+    )
     if period is None:
         return {'status': 'confirm', 'error': '无法从文件名识别基金期间，请确认或手动指定'}
     if not records:

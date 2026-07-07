@@ -47,6 +47,11 @@
                         <label class="form-label">上传Excel文件</label>
                         <input type="file" id="cleanFile" class="form-control" accept=".xlsx,.xlsm" multiple>
                     </div>
+                    <div class="mb-3 d-none" id="periodOverrideGroup">
+                        <label class="form-label">期间覆盖</label>
+                        <input type="date" id="periodOverride" class="form-control">
+                        <div class="form-text text-muted">文件名无法识别期间时使用</div>
+                    </div>
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" id="templateMode">
                         <label class="form-check-label" for="templateMode">
@@ -179,6 +184,22 @@ function escapeHtml(text) {
 // --- Tab 1: Data Cleaning ---
 let pendingFiles = [];
 let pendingDataType = '';
+let pendingPeriodOverride = '';
+
+function getPeriodOverride() {
+    const el = document.getElementById('periodOverride');
+    return el ? el.value : '';
+}
+
+function showPeriodOverride(show) {
+    const group = document.getElementById('periodOverrideGroup');
+    if (show) group.classList.remove('d-none');
+    else group.classList.add('d-none');
+}
+
+function isPeriodConfirm(result) {
+    return result && result.status === 'confirm' && (result.error || '').includes('期间');
+}
 
 function toggleTemplateMode() {
     const type = document.getElementById('cleanType').value;
@@ -195,6 +216,7 @@ async function startClean(overwrite = false) {
     const fileInput = document.getElementById('cleanFile');
     const type = document.getElementById('cleanType').value;
     const templateMode = document.getElementById('templateMode').checked;
+    const periodOverride = getPeriodOverride();
     if (!fileInput.files.length) { alert('请选择文件'); return; }
 
     if (templateMode && fileInput.files.length > 1) {
@@ -205,6 +227,7 @@ async function startClean(overwrite = false) {
     if (!overwrite) {
         pendingFiles = Array.from(fileInput.files);
         pendingDataType = type;
+        pendingPeriodOverride = periodOverride;
     }
 
     const filesToSend = overwrite ? pendingFiles : Array.from(fileInput.files);
@@ -213,11 +236,19 @@ async function startClean(overwrite = false) {
         const form = new FormData();
         form.append('file', filesToSend[0]);
         form.append('data_type', type);
+        if (periodOverride) form.append('period_override', periodOverride);
 
         document.getElementById('cleanProgress').classList.remove('d-none');
         const res = await fetch('/api/clean-preview', { method: 'POST', body: form });
         const data = await res.json();
         document.getElementById('cleanProgress').classList.add('d-none');
+
+        if (isPeriodConfirm(data)) {
+            showPeriodOverride(true);
+            document.getElementById('cleanResult').innerHTML = `<div class="alert alert-warning">无法从文件名识别期间，请选择期间后重新点击开始清洗。</div>`;
+            document.getElementById('confirmCleanBtn').classList.add('d-none');
+            return;
+        }
 
         if (data.status === 'error') {
             document.getElementById('cleanResult').innerHTML = `<div class="alert alert-danger">预览失败：${escapeHtml(data.error)}</div>`;
@@ -236,6 +267,8 @@ async function startClean(overwrite = false) {
     const form = new FormData();
     form.append('data_type', type);
     form.append('overwrite', overwrite ? 'true' : 'false');
+    const overrideToSend = overwrite ? pendingPeriodOverride : periodOverride;
+    if (overrideToSend) form.append('period_override', overrideToSend);
     for (const file of filesToSend) {
         form.append('files', file);
     }
@@ -244,6 +277,18 @@ async function startClean(overwrite = false) {
     const res = await fetch('/api/clean-batch', { method: 'POST', body: form });
     const data = await res.json();
     document.getElementById('cleanProgress').classList.add('d-none');
+
+    const periodConfirmResults = data.results ? data.results.filter(r => isPeriodConfirm(r)) : [];
+    if (periodConfirmResults.length > 0 || isPeriodConfirm(data)) {
+        showPeriodOverride(true);
+        let html = `<div class="alert alert-warning">以下文件无法识别期间，请在上方选择期间后重新点击开始清洗：<ul>`;
+        for (const r of periodConfirmResults) {
+            html += `<li>${escapeHtml(r.filename || r.original_name || '-')}</li>`;
+        }
+        html += '</ul></div>';
+        document.getElementById('cleanResult').innerHTML = html;
+        return;
+    }
 
     if (data.status === 'confirm' && data.duplicates > 0) {
         let listHtml = '';
@@ -364,10 +409,12 @@ async function submitCleanConfirm() {
         }
     }
 
+    const periodOverride = getPeriodOverride();
     const form = new FormData();
     form.append('file', cleanPreviewFile);
     form.append('data_type', cleanPreviewData.data_type || document.getElementById('cleanType').value);
     form.append('confirmed_mappings', JSON.stringify(confirmedMappings));
+    if (periodOverride) form.append('period_override', periodOverride);
 
     document.getElementById('cleanProgress').classList.remove('d-none');
     const res = await fetch('/api/clean-confirm', { method: 'POST', body: form });

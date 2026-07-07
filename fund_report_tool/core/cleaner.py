@@ -176,7 +176,8 @@ def try_parse_complex_sheet(xl, sheet_name):
             for col_idx in range(item_col + 1, len(df.columns)):
                 for data_idx in range(header_idx + 1, min(header_idx + 5, end_idx)):
                     val = df.iloc[data_idx, col_idx]
-                    if pd.notna(val) and normalize_value(val) != 0:
+                    pv = normalize_value(val)
+                    if pd.notna(val) and pv.status == 'ok' and pv.value not in (None, 0):
                         value_col = col_idx
                         break
                 if value_col is not None:
@@ -197,7 +198,8 @@ def try_parse_complex_sheet(xl, sheet_name):
                         for v_col in range(col_idx + 1, len(df.columns)):
                             for data_idx in range(header_idx + 1, min(header_idx + 5, end_idx)):
                                 val = df.iloc[data_idx, v_col]
-                                if pd.notna(val) and normalize_value(val) != 0:
+                                pv = normalize_value(val)
+                                if pd.notna(val) and pv.status == 'ok' and pv.value not in (None, 0):
                                     right_value_col = v_col
                                     break
                             if right_value_col is not None:
@@ -235,13 +237,15 @@ def try_parse_complex_sheet(xl, sheet_name):
     return items if items else None
 
 
-def preview_clean(file_path, data_type):
+def preview_clean(file_path, data_type, original_filename=None, period_override=None):
     """Preview mode: extract raw items and match against template without storing."""
     if data_type not in ('project', 'fund'):
         return {"status": "error", "error": "Invalid data_type"}
 
+    detection_name = original_filename or os.path.basename(file_path)
+
     if data_type == 'fund':
-        return fund_parser.preview_fund_fair_value(file_path)
+        return fund_parser.preview_fund_fair_value(file_path, original_filename=original_filename, period_override=period_override)
 
     try:
         xl = pd.ExcelFile(file_path)
@@ -263,11 +267,11 @@ def preview_clean(file_path, data_type):
     except Exception as e:
         return {"status": "error", "error": f"无法读取sheet: {e}"}
 
-    period = detect_period(df_first, file_path)
+    period = period_override or detect_period(df_first, detection_name)
     if not period:
         period = "unknown"
 
-    project_name = os.path.splitext(os.path.basename(file_path))[0]
+    project_name = os.path.splitext(os.path.basename(detection_name))[0]
     if '_' in project_name:
         parts = project_name.rsplit('_', 1)
         if re.match(r'20\d{2}', parts[1]):
@@ -374,10 +378,14 @@ def preview_clean(file_path, data_type):
     }
 
 
-def clean_and_store(file_path, data_type, db_path=None, overwrite=False, confirmed_mappings=None):
+def clean_and_store(file_path, data_type, db_path=None, overwrite=False, confirmed_mappings=None, original_filename=None, period_override=None):
     """Main cleaning function. If confirmed_mappings is provided, only keep mapped items."""
+    detection_name = original_filename or os.path.basename(file_path)
+
     if data_type == 'fund':
-        period, records, warnings = fund_parser.parse_fund_fair_value(file_path)
+        period, records, warnings = fund_parser.parse_fund_fair_value(
+            file_path, original_filename=original_filename, period_override=period_override
+        )
         if period is None:
             return {
                 "status": "confirm",
@@ -420,12 +428,12 @@ def clean_and_store(file_path, data_type, db_path=None, overwrite=False, confirm
     except Exception as e:
         return {"status": "error", "warnings": [], "errors": [f"无法读取sheet: {e}"], "metrics": {}}
 
-    period = detect_period(df_first, file_path)
+    period = period_override or detect_period(df_first, detection_name)
     if not period:
         period = "unknown"
         warnings_list.append("未能自动识别报表期间")
 
-    project_name = os.path.splitext(os.path.basename(file_path))[0]
+    project_name = os.path.splitext(os.path.basename(detection_name))[0]
     if '_' in project_name:
         parts = project_name.rsplit('_', 1)
         if re.match(r'20\d{2}', parts[1]):

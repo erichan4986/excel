@@ -96,14 +96,17 @@ async def index(request: Request):
 
 
 @app.post("/api/clean")
-async def api_clean(file: UploadFile = File(...), data_type: str = Form(...), overwrite: bool = Form(False)):
+async def api_clean(file: UploadFile = File(...), data_type: str = Form(...), overwrite: bool = Form(False), period_override: Optional[str] = Form(None)):
     if data_type not in ('project', 'fund'):
         return JSONResponse({"error": "Invalid data_type, must be 'project' or 'fund'"}, status_code=400)
 
     original_name, stored_name, file_path = _save_upload(file)
     _record_upload(original_name, stored_name, file_path)
 
-    result = clean_and_store(str(file_path), data_type, overwrite=overwrite)
+    result = clean_and_store(
+        str(file_path), data_type, overwrite=overwrite,
+        original_filename=original_name, period_override=period_override
+    )
     result['original_name'] = original_name
     result['stored_name'] = stored_name
     result['stored_path'] = str(file_path)
@@ -111,7 +114,7 @@ async def api_clean(file: UploadFile = File(...), data_type: str = Form(...), ov
 
 
 @app.post("/api/clean-batch")
-async def api_clean_batch(files: List[UploadFile] = File(...), data_type: str = Form(...), overwrite: bool = Form(False)):
+async def api_clean_batch(files: List[UploadFile] = File(...), data_type: str = Form(...), overwrite: bool = Form(False), period_override: Optional[str] = Form(None)):
     if data_type not in ('project', 'fund'):
         return JSONResponse({"error": "Invalid data_type, must be 'project' or 'fund'"}, status_code=400)
 
@@ -119,7 +122,10 @@ async def api_clean_batch(files: List[UploadFile] = File(...), data_type: str = 
     for file in files:
         original_name, stored_name, file_path = _save_upload(file)
         _record_upload(original_name, stored_name, file_path)
-        result = clean_and_store(str(file_path), data_type, overwrite=overwrite)
+        result = clean_and_store(
+            str(file_path), data_type, overwrite=overwrite,
+            original_filename=original_name, period_override=period_override
+        )
         result["filename"] = original_name
         result["stored_name"] = stored_name
         result["stored_path"] = str(file_path)
@@ -593,14 +599,17 @@ async def api_chat(req: ChatRequest):
 
 
 @app.post("/api/clean-preview")
-async def api_clean_preview(file: UploadFile = File(...), data_type: str = Form(...)):
+async def api_clean_preview(file: UploadFile = File(...), data_type: str = Form(...), period_override: Optional[str] = Form(None)):
     if data_type not in ('project', 'fund'):
         return JSONResponse({"error": "Invalid data_type, must be 'project' or 'fund'"}, status_code=400)
 
     original_name, stored_name, file_path = _save_upload(file)
     _record_upload(original_name, stored_name, file_path)
 
-    result = cleaner.preview_clean(str(file_path), data_type)
+    result = cleaner.preview_clean(
+        str(file_path), data_type,
+        original_filename=original_name, period_override=period_override
+    )
     result['original_name'] = original_name
     result['stored_name'] = stored_name
     result['stored_path'] = str(file_path)
@@ -609,7 +618,8 @@ async def api_clean_preview(file: UploadFile = File(...), data_type: str = Form(
 
 @app.post("/api/clean-confirm")
 async def api_clean_confirm(file: UploadFile = File(...), data_type: str = Form(...),
-                            confirmed_mappings: str = Form("{}"), overwrite: bool = Form(False)):
+                            confirmed_mappings: str = Form("{}"), overwrite: bool = Form(False),
+                            period_override: Optional[str] = Form(None)):
     if data_type not in ('project', 'fund'):
         return JSONResponse({"error": "Invalid data_type, must be 'project' or 'fund'"}, status_code=400)
 
@@ -645,7 +655,10 @@ async def api_clean_confirm(file: UploadFile = File(...), data_type: str = Form(
     with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
         yaml.dump(config, f, allow_unicode=True, sort_keys=False)
 
-    result = cleaner.clean_and_store(str(file_path), data_type, overwrite=overwrite, confirmed_mappings=confirmed)
+    result = cleaner.clean_and_store(
+        str(file_path), data_type, overwrite=overwrite, confirmed_mappings=confirmed,
+        original_filename=original_name, period_override=period_override
+    )
     result['original_name'] = original_name
     result['stored_name'] = stored_name
     result['stored_path'] = str(file_path)
