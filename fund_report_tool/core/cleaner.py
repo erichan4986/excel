@@ -393,7 +393,11 @@ def clean_and_store(file_path, data_type, db_path=None, overwrite=False, confirm
                 "duplicates": []
             }
         if not records:
-            return {"status": "error", "error": "未能解析到基金数据"}
+            return {
+                "status": "error",
+                "error": "未能解析到符合基金项目指标格式的数据",
+                "warnings": warnings,
+            }
         result = fund_parser.store_fund_records(records, overwrite=overwrite)
         result['period'] = records[0]['period'] if records else None
         result['records_processed'] = len(records)
