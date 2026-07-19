@@ -246,7 +246,11 @@ def preview_fund_fair_value(file_path: str, original_filename: Optional[str] = N
     if period is None:
         return {'status': 'confirm', 'error': '无法从文件名识别基金期间，请确认或手动指定'}
     if not records:
-        return {'status': 'error', 'error': '未能解析到任何基金数据'}
+        return {
+            'status': 'error',
+            'error': '未能解析到符合基金项目指标格式的数据',
+            'warnings': warnings,
+        }
 
     # Group by fund for preview display
     fund_stats = {}
