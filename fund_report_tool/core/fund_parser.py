@@ -130,6 +130,20 @@ def parse_fund_fair_value(file_path: str, original_filename: Optional[str] = Non
         header_values = [df.iloc[header_row_idx, c] for c in range(len(df.columns))]
         col_map = _identify_headers(header_values)
 
+        # A fund-project source sheet must expose the core financial fields.
+        # Do not fall back to positional columns here: LP templates often contain
+        # project names and a cost column but no fair-value / exit-proceeds data.
+        # Positional fallback would silently turn labels or sequence numbers into
+        # financial records.
+        required_columns = {'project_name', 'cost', 'fair_value', 'total_return'}
+        missing_columns = required_columns - set(col_map)
+        if missing_columns:
+            warnings.append(
+                f"Sheet '{sheet_name}' 已跳过：缺少基金项目指标必填列 "
+                f"{', '.join(sorted(missing_columns))}"
+            )
+            continue
+
         # Parse data rows (after header)
         for row_idx in range(header_row_idx + 1, len(df)):
             row = df.iloc[row_idx]
