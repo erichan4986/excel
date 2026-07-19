@@ -1,8 +1,9 @@
 import os
+from pathlib import Path
 import pandas as pd
 import pytest
 from core.database import init_db, get_session, ProjectFinancial, CleanLog
-from core import cleaner
+from core import cleaner, fund_parser
 
 TEST_DB = "data/test_cleaner.db"
 UPLOAD_DIR = "data/uploads"
@@ -124,3 +125,31 @@ def test_clean_default_overwrite_is_false(setup_duplicate):
     # Default overwrite should be False (backward compatible)
     result = cleaner.clean_and_store(path, "project", db_path=setup_duplicate)
     assert result["status"] == "confirm"
+
+
+def test_parse_repo_fund_metric_fixture():
+    """The checked-in multi-fund fixture remains compatible with the parser."""
+    repo_root = Path(__file__).resolve().parents[2]
+    fixture = repo_root / "项目指标数据_财务部提供_20260331_测试.xlsx"
+
+    period, records, warnings = fund_parser.parse_fund_fair_value(
+        str(fixture), original_filename=fixture.name
+    )
+
+    assert period == "2026-03-31"
+    assert len(records) == 22
+    assert {record["fund_name"] for record in records} == {"并购一期", "浦江一期", "并购三期"}
+    assert not warnings
+
+
+def test_reject_lp_update_template_as_fund_source():
+    """A destination template must not be silently ingested as fund metrics."""
+    template = Path(__file__).resolve().parents[1] / "基金项目2025Q4更新.xlsx"
+
+    period, records, warnings = fund_parser.parse_fund_fair_value(
+        str(template), original_filename=template.name, period_override="2025-12-31"
+    )
+
+    assert period == "2025-12-31"
+    assert not records
+    assert any("缺少基金项目指标必填列" in warning for warning in warnings)
